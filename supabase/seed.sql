@@ -8,7 +8,6 @@ create table public.humor_entries (
   punchline text not null check (length(punchline) between 1 and 500),
   category text not null check (category in ('Everyday', 'Work', 'Code')),
   author text not null,
-  likes integer not null default 0 check (likes >= 0),
   created_at timestamptz not null default now()
 );
 
@@ -18,12 +17,11 @@ grant select on public.humor_entries to anon, authenticated;
 create policy "Public can read demo humor"
   on public.humor_entries for select to anon, authenticated using (true);
 
--- All content and engagement figures are fictional demo data.
--- Randomize authors, like counts, and timestamps at seed time.
-insert into public.humor_entries (title, setup, punchline, category, author, likes, created_at)
+-- All content is fictional demo data.
+-- Randomize authors and timestamps at seed time.
+insert into public.humor_entries (title, setup, punchline, category, author, created_at)
 select title, setup, punchline, category,
   (array['Alex', 'Jamie', 'Morgan', 'Sam', 'Riley'])[1 + floor(random() * 5)::int],
-  20 + floor(random() * 480)::int,
   now() - random() * interval '14 days'
 from (values
   ('An early night', 'I go to bed early every single night.', 'My phone just needs another three hours to wind down.', 'Everyday'),

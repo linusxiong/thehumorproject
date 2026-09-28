@@ -17,7 +17,7 @@ SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 
 The original `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` names are also supported. Legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY` or `SUPABASE_ANON_KEY` values work as a fallback. `next.config.ts` maps these to the two public settings used by the browser, preferring an explicitly configured public URL and a publishable key. Database passwords, secret keys, and service-role keys are never mapped into the client configuration.
 
-For a new database, run `supabase/seed.sql` once in the project's Supabase SQL Editor. It creates `humor_entries` and inserts nine fictional stories with randomized authors, like counts, and timestamps. The transaction will fail safely if the table already exists.
+For a new database, run `supabase/seed.sql` once in the project's Supabase SQL Editor. It creates `humor_entries` and inserts nine fictional stories with randomized authors and timestamps. The transaction will fail safely if the table already exists.
 
 The original seed script enables Row Level Security for the demo table and grants anonymous and authenticated clients read-only access. Existing projects may have different RLS settings; the voting migration does not alter them. Add stories through the SQL Editor. The UI displays database results and never silently substitutes local mock data. The current collection query loads the newest 100 stories.
 
@@ -70,7 +70,7 @@ With `bun dev` running at `http://localhost:3000`, run `bun run check:auth`. The
 
 ### Caption voting
 
-Apply the SQL files in `supabase/migrations` in order after creating `humor_entries`. Each story's punchline is its caption, so `caption_votes.caption_id` references `humor_entries.id`. Each verified account can submit one upvote (`1`) or downvote (`-1`) per caption, enforced by a database unique constraint. Votes cannot be changed or submitted again. The card footer shows arrow icons and real vote counts in place of demo likes, updates immediately while saving, and reconciles with the database afterward.
+Apply the SQL files in `supabase/migrations` in order after creating `humor_entries`. Each story's punchline is its caption, so `caption_votes.caption_id` references `humor_entries.id`. Each verified account can submit one upvote (`1`) or downvote (`-1`) per caption, enforced by a database unique constraint. Click the selected arrow to withdraw a vote, then choose either arrow to vote again. Only the authenticated account's own vote can be withdrawn. The card footer shows arrow icons and real vote counts, updates immediately while saving, and reconciles with the database afterward.
 
 For an existing project linked with the Supabase CLI, apply pending migrations with `supabase db push`. The voting migrations have already been applied to this project's database and recorded in its migration history. Run `supabase db query --linked --file scripts/check-votes.sql` to verify real inserts, foreign keys, allowed vote values, table privileges, and disabled RLS; the check rolls back its test rows.
 
@@ -80,7 +80,7 @@ The vote table leaves RLS disabled as requested. Table privileges deny `anon` an
 
 Run `bun run check:votes` for an offline route integration check using real encrypted sessions and a stub database. For a live smoke test, sign in, vote on a caption, and confirm a new row in `caption_votes` with that caption ID, user ID, and vote. Guests see disabled voting buttons, and unauthenticated POST requests are rejected.
 
-With `bun dev` running and the local server key configured, `bun run check:votes:live` verifies the real HTTP-to-database flow with a synthetic local session, checks duplicate submissions (including concurrent requests and a new session for the same account), then removes only its uniquely identified test votes.
+With `bun dev` running and the local server key configured, `bun run check:votes:live` verifies the real HTTP-to-database flow with a synthetic local session, checks duplicate submissions (including concurrent requests and a new session for the same account), withdrawal ownership, and voting again after withdrawal, then removes only its uniquely identified test votes.
 
 ```sh
 bun run lint

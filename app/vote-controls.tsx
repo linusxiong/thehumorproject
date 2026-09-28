@@ -14,10 +14,9 @@ export function VoteControls({ captionId }: { captionId: number }) {
   const [votes, setVotes] = useState<Votes | null>(null);
   const [loadedFor, setLoadedFor] = useState<string | undefined>();
   const [error, setError] = useState("");
-  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
-    if (isPending) return;
+    if (isPending || busy) return;
     const controller = new AbortController();
     fetch(`/api/caption-votes?captionId=${captionId}`, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
@@ -31,18 +30,20 @@ export function VoteControls({ captionId }: { captionId: number }) {
       })
       .catch(() => { if (!controller.signal.aborted) setError("Vote counts could not be loaded. Refresh to retry."); });
     return () => controller.abort();
-  }, [captionId, userId, isPending, revision]);
+  }, [captionId, userId, isPending, busy]);
 
   async function vote(value: 1 | -1) {
-    if (!session || !votes || votes.user_vote !== null || loadedFor !== userId || submitting.current) return;
+    if (!session || !votes || (votes.user_vote !== null && votes.user_vote !== value) || loadedFor !== userId || submitting.current) return;
     submitting.current = true;
     setBusy(true);
     setError("");
     const previous = votes;
-    setVotes({ upvotes: votes.upvotes + (value === 1 ? 1 : 0), downvotes: votes.downvotes + (value === -1 ? 1 : 0), user_vote: value });
+    const withdraw = votes.user_vote === value;
+    const change = withdraw ? -1 : 1;
+    setVotes({ upvotes: votes.upvotes + (value === 1 ? change : 0), downvotes: votes.downvotes + (value === -1 ? change : 0), user_vote: withdraw ? null : value });
     try {
       const response = await fetch("/api/caption-votes", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: withdraw ? "DELETE" : "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ captionId, vote: value }),
       });
       const result = await response.json();
@@ -53,18 +54,17 @@ export function VoteControls({ captionId }: { captionId: number }) {
     } finally {
       submitting.current = false;
       setBusy(false);
-      setRevision((value) => value + 1);
     }
   }
 
-  const disabled = isPending || !session || !votes || loadedFor !== userId || busy || votes.user_vote !== null;
+  const disabled = isPending || !session || !votes || loadedFor !== userId || busy;
   return (
     <div className="relative flex gap-1" role="group" aria-label="Rate this caption" aria-busy={busy}
-      title={!session ? "Sign in to vote" : votes?.user_vote != null ? "You have already voted" : "Upvote or downvote"}>
+      title={!session ? "Sign in to vote" : votes?.user_vote != null ? "Click your selected arrow to withdraw your vote" : "Upvote or downvote"}>
       {([1, -1] as const).map((value) => (
         <Button key={value} size="sm" variant={votes?.user_vote === value ? "secondary" : "ghost"}
-          className="min-w-0 gap-1 px-2 tabular-nums" isDisabled={disabled}
-          aria-label={value === 1 ? "Upvote" : "Downvote"} aria-pressed={votes?.user_vote === value}
+          className="min-w-0 gap-1 px-2 tabular-nums" isDisabled={disabled || (votes?.user_vote != null && votes.user_vote !== value)}
+          aria-label={votes?.user_vote === value ? (value === 1 ? "Withdraw upvote" : "Withdraw downvote") : (value === 1 ? "Upvote" : "Downvote")} aria-pressed={votes?.user_vote === value}
           onPress={() => vote(value)}>
           <span aria-hidden="true" className="text-lg">{value === 1 ? "↑" : "↓"}</span>
           <span aria-live="polite">{votes ? (value === 1 ? votes.upvotes : votes.downvotes) : "—"}</span>

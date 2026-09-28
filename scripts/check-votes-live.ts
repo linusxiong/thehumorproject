@@ -25,8 +25,8 @@ async function cookie(email: string) {
   }, secret, "better-auth-session", 300);
   return `better-auth.session_token=${encodeURIComponent(`${token}.${await makeSignature(token, secret)}`)}; better-auth.session_data=${encrypted}`;
 }
-const post = (vote: number, session = "") => fetch(new URL("/api/caption-votes", origin), {
-  method: "POST", headers: { origin, cookie: session, "Content-Type": "application/json" },
+const post = (vote: number, session = "", withdraw = false) => fetch(new URL("/api/caption-votes", origin), {
+  method: withdraw ? "DELETE" : "POST", headers: { origin, cookie: session, "Content-Type": "application/json" },
   body: JSON.stringify({ captionId: caption.id, vote, user_id: "ignored-client-user" }),
 });
 const counts = async (session = "") => {
@@ -38,21 +38,34 @@ try {
   const before = await counts();
   assert.equal(before.user_vote, null);
   assert.equal((await post(1)).status, 401);
+  assert.equal((await post(1, "", true)).status, 401);
   const firstCookie = await cookie(emails[0]);
   const attempts = await Promise.all([post(1, firstCookie), post(1, firstCookie)]);
   assert.deepEqual(attempts.map(response => response.status).sort(), [201, 409]);
   assert.equal((await post(-1, await cookie(emails[0]))).status, 409, "A new login must not permit another vote");
-  assert.equal((await post(-1, await cookie(emails[1]))).status, 201);
+  const secondCookie = await cookie(emails[1]);
+  assert.equal((await post(-1, secondCookie)).status, 201);
   const after = await counts(firstCookie);
   assert.deepEqual(after, { upvotes: before.upvotes + 1, downvotes: before.downvotes + 1, user_vote: 1 });
   const { data: votes, error: readError } = await client.from("caption_votes")
-    .select("caption_id,user_id,vote,created_at").in("user_id", userIds).order("id");
+    .select("id,caption_id,user_id,vote,created_at").in("user_id", userIds).order("id");
   assert.ifError(readError);
   assert.equal(votes?.length, 2);
   assert.deepEqual(votes?.map(vote => vote.vote), [1, -1]);
   assert(votes?.every(vote => vote.caption_id === caption.id && userIds.includes(vote.user_id) && Number.isFinite(Date.parse(vote.created_at))));
+  assert.equal((await post(1, secondCookie, true)).status, 200);
+  assert.deepEqual(await counts(firstCookie), after, "Another account cannot withdraw the first account's vote");
+  assert.equal((await post(1, firstCookie, true)).status, 200);
+  assert.equal((await post(1, firstCookie, true)).status, 200);
+  assert.deepEqual(await counts(firstCookie), { upvotes: before.upvotes, downvotes: before.downvotes + 1, user_vote: null });
+  assert.equal((await post(-1, firstCookie)).status, 201);
+  assert.deepEqual(await counts(firstCookie), { upvotes: before.upvotes, downvotes: before.downvotes + 2, user_vote: -1 });
+  assert.equal((await post(1, firstCookie)).status, 409);
+  const { data: replacement, error: replacementError } = await client.from("caption_votes").select("id").eq("caption_id", caption.id).eq("user_id", userIds[0]).single();
+  assert.ifError(replacementError);
+  assert(replacement && votes && replacement.id !== votes[0].id, "Re-voting inserts a new row");
 } finally {
   const { error: cleanupError } = await client.from("caption_votes").delete().in("user_id", userIds);
   assert.ifError(cleanupError);
 }
-console.log("PASS: Live counts, upvotes/downvotes, simultaneous duplicate rejection, returning-user identity, and guest rejection; test votes removed.");
+console.log("PASS: Live counts, upvotes/downvotes, simultaneous duplicate rejection, returning-user identity, withdrawal ownership, re-voting, and guest rejection; test votes removed.");

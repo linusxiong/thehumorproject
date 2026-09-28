@@ -9,7 +9,6 @@ export type HumorEntry = {
   punchline: string;
   category: Exclude<Category, "All">;
   author: string;
-  likes: number;
   created_at: string;
 };
 
@@ -22,7 +21,7 @@ export async function loadHumor(signal?: AbortSignal): Promise<HumorEntry[]> {
   const timeout = AbortSignal.timeout(15_000);
   const { data, error } = await client
     .from("humor_entries")
-    .select("id,title,setup,punchline,category,author,likes,created_at")
+    .select("id,title,setup,punchline,category,author,created_at")
     .order("created_at", { ascending: false })
     // ponytail: newest 100 stories; add server-side pagination when the collection grows.
     .limit(100)

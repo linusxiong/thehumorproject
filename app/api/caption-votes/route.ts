@@ -37,6 +37,14 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  return mutateVote(request, false);
+}
+
+export async function DELETE(request: Request) {
+  return mutateVote(request, true);
+}
+
+async function mutateVote(request: Request, withdraw: boolean) {
   if (request.headers.get("origin") !== new URL(request.url).origin) {
     return Response.json({ error: "Invalid request origin." }, { status: 403 });
   }
@@ -49,14 +57,15 @@ export async function POST(request: Request) {
       return Response.json({ error: "Choose a valid caption and an upvote or downvote." }, { status: 400 });
     }
     if (!client) return Response.json({ error: "Voting is not configured yet." }, { status: 503 });
-    const { error } = await client.from("caption_votes").insert({
-      caption_id: body.captionId, user_id: userId, vote: body.vote,
-    }).abortSignal(AbortSignal.timeout(15_000));
+    const mutation = withdraw
+      ? client.from("caption_votes").delete().eq("caption_id", body.captionId).eq("user_id", userId).eq("vote", body.vote)
+      : client.from("caption_votes").insert({ caption_id: body.captionId, user_id: userId, vote: body.vote });
+    const { error } = await mutation.abortSignal(AbortSignal.timeout(15_000));
     if (error?.code === "23505") return Response.json({ error: "You have already voted on this caption." }, { status: 409 });
     if (error?.code === "23503") return Response.json({ error: "This caption no longer exists." }, { status: 404 });
     if (error) throw error;
-    return Response.json({ vote: body.vote }, { status: 201 });
+    return Response.json({ vote: withdraw ? null : body.vote }, { status: withdraw ? 200 : 201 });
   } catch {
-    return Response.json({ error: "Your vote could not be saved. Please try again." }, { status: 500 });
+    return Response.json({ error: "Your vote could not be updated. Please try again." }, { status: 500 });
   }
 }

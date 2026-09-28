@@ -43,7 +43,7 @@ assert(entries.length >= 9, "Seed the nine demo entries before running this chec
 assert.equal(new Set(entries.map((entry) => entry.id)).size, entries.length);
 assert(entries.every((entry) =>
   entry.title && entry.setup && entry.punchline && entry.author &&
-  categories.includes(entry.category) && Number.isInteger(entry.likes) && entry.likes >= 0 &&
+  categories.includes(entry.category) &&
   Number.isFinite(Date.parse(entry.created_at)),
 ));
 const first = entries[0];
