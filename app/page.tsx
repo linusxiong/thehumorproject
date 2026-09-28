@@ -119,9 +119,8 @@ export default function Home() {
                       <Avatar size="sm" className="size-7"><Avatar.Fallback>{entry.author.slice(0, 1)}</Avatar.Fallback></Avatar>
                       <span>{entry.author}</span>
                     </div>
-                    <span aria-label={`${entry.likes} likes, demo data`}><span aria-hidden="true">♡ </span>{entry.likes}</span>
+                    <VoteControls captionId={entry.id} />
                   </Card.Footer>
-                  <VoteControls captionId={entry.id} />
                 </Card>
               ))}
             </div>
@@ -130,7 +129,7 @@ export default function Home() {
       </main>
       <footer className="flex flex-col justify-between gap-2 border-t border-border py-6 text-xs leading-6 text-muted sm:flex-row">
         <p>Stay curious. Stay a little ridiculous.</p>
-        <p>Demo collection · Fictional authors and randomized likes.</p>
+        <p>Demo collection · Fictional authors. Real votes.</p>
       </footer>
     </div>
   );

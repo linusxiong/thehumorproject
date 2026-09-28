@@ -17,8 +17,14 @@ begin
   values (caption, 'vote-schema-check', 1) returning id into vote_id;
   assert (select created_at is not null and vote = 1 from public.caption_votes where id = vote_id), 'An upvote must be stored with a timestamp';
   insert into public.caption_votes (caption_id, user_id, vote)
-  values (caption, 'vote-schema-check', -1) returning id into vote_id;
+  values (caption, 'vote-schema-check-other', -1) returning id into vote_id;
   assert (select vote = -1 from public.caption_votes where id = vote_id), 'A downvote must be stored';
+
+  begin
+    insert into public.caption_votes (caption_id, user_id, vote) values (caption, 'vote-schema-check', -1);
+    raise exception 'Duplicate vote accepted';
+  exception when unique_violation then null;
+  end;
 
   begin
     insert into public.caption_votes (caption_id, user_id, vote) values (caption, 'vote-schema-check', 0);

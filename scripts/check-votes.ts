@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { makeSignature, symmetricEncodeJWT } from "better-auth/crypto";
 
 // Exercise the real route and encrypted sessions with an isolated database stub.
@@ -13,24 +14,36 @@ Object.assign(process.env, {
   NEXT_PUBLIC_SUPABASE_URL: "https://votes.example.test",
   SUPABASE_SECRET_KEY: "sb_secret_test_only",
 });
-const { POST } = await import("../app/api/caption-votes/route");
-const saved: unknown[] = [];
+const { GET, POST } = await import("../app/api/caption-votes/route");
+const userId = createHash("sha256").update("vote-check@example.com").digest("hex");
+const saved: { caption_id: number; user_id: string; vote: number }[] = [];
 let databaseError = "";
 const originalFetch = globalThis.fetch;
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
-  assert.equal(String(input), "https://votes.example.test/rest/v1/caption_votes");
+  const url = new URL(String(input));
+  assert.equal(url.origin, "https://votes.example.test");
+  if (init?.method === "PATCH") return new Response(null, { status: 204 });
+  const body = JSON.parse(String(init?.body));
+  if (url.pathname.endsWith("/rpc/caption_vote_summary")) {
+    const rows = saved.filter(row => row.caption_id === body.p_caption_id);
+    return Response.json({ upvotes: rows.filter(row => row.vote === 1).length, downvotes: rows.filter(row => row.vote === -1).length, user_vote: rows.find(row => row.user_id === body.p_user_id)?.vote ?? null });
+  }
+  assert.equal(url.pathname, "/rest/v1/caption_votes");
   assert.equal(init?.method, "POST");
-  if (databaseError) return Response.json({ code: databaseError, message: "Test database failure" }, { status: 400 });
-  saved.push(JSON.parse(String(init?.body)));
+  if (databaseError) return Response.json({ code: databaseError }, { status: 400 });
+  if (saved.some(row => row.caption_id === body.caption_id && row.user_id === body.user_id)) {
+    return Response.json({ code: "23505" }, { status: 409 });
+  }
+  saved.push(body);
   return new Response(null, { status: 201 });
 }) as typeof fetch;
 
-async function cookie(expired = false) {
+async function cookie(expired = false, accountId = "vote-user", emailVerified = true) {
   const token = crypto.randomUUID();
   const now = new Date().toISOString();
   const encrypted = await symmetricEncodeJWT({
-    session: { id: "vote-session", token, userId: "vote-user", expiresAt: new Date(Date.now() + (expired ? -60_000 : 300_000)).toISOString(), createdAt: now, updatedAt: now },
-    user: { id: "vote-user", name: "Vote Check", email: "vote-check@example.com", emailVerified: true, createdAt: now, updatedAt: now },
+    session: { id: "vote-session", token, userId: accountId, expiresAt: new Date(Date.now() + (expired ? -60_000 : 300_000)).toISOString(), createdAt: now, updatedAt: now },
+    user: { id: accountId, name: "Vote Check", email: "vote-check@example.com", emailVerified, createdAt: now, updatedAt: now },
     updatedAt: Date.now(), version: "1",
   }, secret, "better-auth-session", 300);
   return `better-auth.session_token=${encodeURIComponent(`${token}.${await makeSignature(token, secret)}`)}; better-auth.session_data=${encrypted}`;
@@ -53,14 +66,22 @@ try {
   assert.equal((await POST(new Request(`${origin}/api/caption-votes`, { method: "POST", headers: { origin, cookie: valid }, body: "{" }))).status, 400);
   assert.equal(saved.length, 0);
   for (const vote of [1, -1]) {
-    const result = await post({ captionId: 7, vote, user_id: "forged-user" }, valid);
+    const result = await post({ captionId: vote === 1 ? 7 : 8, vote, user_id: "forged-user" }, valid);
     assert.equal(result.status, 201);
     assert.deepEqual(await result.json(), { vote });
   }
   assert.deepEqual(saved, [
-    { caption_id: 7, user_id: "vote-user", vote: 1 },
-    { caption_id: 7, user_id: "vote-user", vote: -1 },
+    { caption_id: 7, user_id: userId, vote: 1 },
+    { caption_id: 8, user_id: userId, vote: -1 },
   ]);
+  assert.equal((await post({ captionId: 7, vote: -1 }, valid)).status, 409);
+  assert.equal((await post({ captionId: 7, vote: 1 }, await cookie(false, "new-session-user"))).status, 409);
+  assert.equal((await post(input, await cookie(false, "unverified", false))).status, 403);
+  const counts = await GET(new Request(`${origin}/api/caption-votes?captionId=7`, { headers: { cookie: valid } }));
+  assert.deepEqual(await counts.json(), { upvotes: 1, downvotes: 0, user_vote: 1 });
+  const guest = await GET(new Request(`${origin}/api/caption-votes?captionId=7`));
+  assert.deepEqual(await guest.json(), { upvotes: 1, downvotes: 0, user_vote: null });
+  assert.equal((await GET(new Request(`${origin}/api/caption-votes?captionId=-1`))).status, 400);
   databaseError = "23503";
   assert.equal((await post(input, valid)).status, 404);
   databaseError = "42501";
