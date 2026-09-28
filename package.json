@@ -9,6 +9,8 @@
     "lint": "eslint",
     "check:supabase": "bun --env-file=.env.local scripts/check-supabase.ts",
     "check:auth": "bun --env-file=.env.local scripts/check-auth.ts",
+    "check:votes": "bun scripts/check-votes.ts",
+    "check:votes:live": "bun --env-file=.env.local scripts/check-votes-live.ts",
     "check:oauth-proxy": "bun scripts/check-oauth-proxy.ts"
   },
   "dependencies": {

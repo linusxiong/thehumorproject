@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-const authClient = createAuthClient();
+export const authClient = createAuthClient();
 
 export function AuthControls() {
   const router = useRouter();

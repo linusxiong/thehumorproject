@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { categories, filterHumor, loadHumor, type Category, type HumorEntry } from "@/lib/humor";
 import { AuthControls } from "./auth-controls";
+import { VoteControls } from "./vote-controls";
 
 const categoryColors = { Everyday: "success", Work: "warning", Code: "accent" } as const;
 
@@ -120,6 +121,7 @@ export default function Home() {
                     </div>
                     <span aria-label={`${entry.likes} likes, demo data`}><span aria-hidden="true">♡ </span>{entry.likes}</span>
                   </Card.Footer>
+                  <VoteControls captionId={entry.id} />
                 </Card>
               ))}
             </div>

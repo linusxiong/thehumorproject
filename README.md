@@ -19,7 +19,7 @@ The original `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KE
 
 For a new database, run `supabase/seed.sql` once in the project's Supabase SQL Editor. It creates `humor_entries` and inserts nine fictional stories with randomized authors, like counts, and timestamps. The transaction will fail safely if the table already exists.
 
-Row Level Security is enabled. Anonymous and authenticated clients can only read this demo table; they cannot insert, update, or delete rows. Add stories through the SQL Editor. The UI displays database results and never silently substitutes local mock data. The current collection query loads the newest 100 stories.
+The original seed script enables Row Level Security for the demo table and grants anonymous and authenticated clients read-only access. Existing projects may have different RLS settings; the voting migration does not alter them. Add stories through the SQL Editor. The UI displays database results and never silently substitutes local mock data. The current collection query loads the newest 100 stories.
 
 ```sh
 bun dev
@@ -68,8 +68,23 @@ With `bun dev` running at `http://localhost:3000`, run `bun run check:auth`. The
 
 ## Checks
 
+### Caption voting
+
+Run `supabase/migrations/202609280001_caption_votes.sql` once in the Supabase SQL Editor after creating `humor_entries`. Each story's punchline is its caption, so `caption_votes.caption_id` references `humor_entries.id`. Every successful upvote (`1`) or downvote (`-1`) inserts a new row with the verified Better Auth session's user ID and a database timestamp. Votes are submissions, not a one-vote-per-user score; repeat submissions create new rows. Existing demo likes are separate from votes.
+
+For an existing project linked with the Supabase CLI, apply pending migrations with `supabase db push`. The voting migration has already been applied to this project's database and recorded in its migration history. Run `supabase db query --linked --file scripts/check-votes.sql` to verify real inserts, foreign keys, allowed vote values, table privileges, and disabled RLS; the check rolls back its test rows.
+
+Configure `SUPABASE_SECRET_KEY` (or the legacy `SUPABASE_SERVICE_ROLE_KEY`) in `.env.local` and in the applicable Vercel environments. Restart the local server or redeploy after configuration. This key is server-only and must never use a `NEXT_PUBLIC_` prefix. Vercel environment settings do not automatically populate `.env.local`.
+
+The vote table leaves RLS disabled as requested. Table privileges deny `anon` and `authenticated` direct access; `/api/caption-votes` checks the request origin and Better Auth session before inserting through the server-only Supabase client. The user ID always comes from the verified session, never the request body. Better Auth currently uses in-memory users, so its user IDs are session identities and may change after a server restart and a new sign-in; persistent accounts would be needed for a one-vote-per-account rule.
+
+Run `bun run check:votes` for an offline route integration check using real encrypted sessions and a stub database. For a live smoke test, sign in, vote on a caption, and confirm a new row in `caption_votes` with that caption ID, user ID, and vote. Guests see disabled voting buttons, and unauthenticated POST requests are rejected.
+
+With `bun dev` running and the local server key configured, `bun run check:votes:live` verifies the real HTTP-to-database flow with a synthetic local session, then deletes only the two test votes belonging to its unique test user.
+
 ```sh
 bun run lint
+bun run check:votes
 bun run check:supabase
 bun run build
 ```
