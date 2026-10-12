@@ -11,7 +11,9 @@
     "check:auth": "bun --env-file=.env.local scripts/check-auth.ts",
     "check:votes": "bun scripts/check-votes.ts",
     "check:votes:live": "bun --env-file=.env.local scripts/check-votes-live.ts",
-    "check:oauth-proxy": "bun scripts/check-oauth-proxy.ts"
+    "check:oauth-proxy": "bun scripts/check-oauth-proxy.ts",
+    "check:avatar": "bun scripts/check-avatar.ts",
+    "check:avatar:live": "bun --env-file=.env.local scripts/check-avatar-live.ts"
   },
   "dependencies": {
     "@heroui/react": "^3.2.6",

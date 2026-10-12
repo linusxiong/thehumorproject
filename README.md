@@ -2,6 +2,8 @@
 
 A small humor collection built with Next.js App Router, HeroUI v3, and Supabase. The home page reads real database rows and supports category filters, search, refresh, loading placeholders, empty states, and error recovery.
 
+The interface is built from HeroUI components with only layout utilities on top; `app/globals.css` sets just the brand accent and fonts. Light and dark themes follow the operating system automatically: an inline script in `app/layout.tsx` sets `data-theme` on `<html>` before the first paint and updates it when the system setting changes. HeroUI components are imported only from Client Components, because the HeroUI package cannot be imported from Server Components in webpack builds.
+
 ## Local development
 
 ```sh
@@ -29,7 +31,7 @@ Open http://localhost:3000.
 
 ## Google sign-in
 
-Authentication uses the open-source [Better Auth](https://better-auth.com/docs/integrations/next) package. It is the only additional direct dependency. The home page and demo Supabase collection remain public; `/members` validates the encrypted session on the server before rendering member content. The header shows Google sign-in for visitors and an account link plus sign-out for members.
+Authentication uses the open-source [Better Auth](https://better-auth.com/docs/integrations/next) package. It is the only additional direct dependency. The home page and demo Supabase collection remain public; `/members` validates the encrypted session on the server before rendering member content. The header shows Google sign-in for visitors. For members it shows only their avatar, which opens a menu with their name, a link to the members area, and sign-out.
 
 Add these server-only variables to `.env.local` and to your Vercel deployment environment:
 
@@ -70,13 +72,13 @@ With `bun dev` running at `http://localhost:3000`, run `bun run check:auth`. The
 
 ### Caption voting
 
-Apply the SQL files in `supabase/migrations` in order after creating `humor_entries`. Each story's punchline is its caption, so `caption_votes.caption_id` references `humor_entries.id`. Each verified account can submit one upvote (`1`) or downvote (`-1`) per caption, enforced by a database unique constraint. Click the selected arrow to withdraw a vote, then choose either arrow to vote again. Only the authenticated account's own vote can be withdrawn. The card footer shows arrow icons and real vote counts, updates immediately while saving, and reconciles with the database afterward.
+Apply the SQL files in `supabase/migrations` in order after creating `humor_entries`. Each story's punchline is its caption, so `caption_votes.caption_id` references `humor_entries.id`. Each verified account can submit one upvote (`1`) or downvote (`-1`) per caption, enforced by a database unique constraint. Click the selected arrow to withdraw a vote, then choose either arrow to vote again. Only the authenticated account's own vote can be withdrawn. To avoid biasing ratings, the card footer shows only arrow icons until the signed-in account has voted on that caption; real upvote and downvote totals appear after the vote is saved and hide again if the vote is withdrawn. The selected arrow updates immediately while saving and reconciles with the database afterward.
 
 For an existing project linked with the Supabase CLI, apply pending migrations with `supabase db push`. The voting migrations have already been applied to this project's database and recorded in its migration history. Run `supabase db query --linked --file scripts/check-votes.sql` to verify real inserts, foreign keys, allowed vote values, table privileges, and disabled RLS; the check rolls back its test rows.
 
 Configure `SUPABASE_SECRET_KEY` (or the legacy `SUPABASE_SERVICE_ROLE_KEY`) in `.env.local` and in the applicable Vercel environments. Restart the local server or redeploy after configuration. This key is server-only and must never use a `NEXT_PUBLIC_` prefix. Vercel environment settings do not automatically populate `.env.local`.
 
-The vote table leaves RLS disabled as requested. Table privileges deny `anon` and `authenticated` direct access; `/api/caption-votes` checks the request origin and Better Auth session before inserting through the server-only Supabase client. The voter ID is a SHA-256 digest of the verified session's normalized email, never client input, so a new stateless login does not reset voting eligibility. Historical session IDs are bound to this stable identity when their original authenticated session next loads or submits votes; old IDs whose sessions are already lost cannot be attributed retroactively. Existing repeated submissions are preserved in the private `caption_vote_duplicates` archive; only the first vote counts. The count endpoint returns aggregate totals and the current account's own vote, never voter identities.
+The vote table leaves RLS disabled as requested. Table privileges deny `anon` and `authenticated` direct access; `/api/caption-votes` checks the request origin and Better Auth session before inserting through the server-only Supabase client. The voter ID is a SHA-256 digest of the verified session's normalized email, never client input, so a new stateless login does not reset voting eligibility. Historical session IDs are bound to this stable identity when their original authenticated session next loads or submits votes; old IDs whose sessions are already lost cannot be attributed retroactively. Existing repeated submissions are preserved in the private `caption_vote_duplicates` archive; only the first vote counts. The count endpoint returns the current account's own vote, and aggregate totals only once that account has voted; guests and accounts that have not voted never receive totals. It never returns voter identities.
 
 Run `bun run check:votes` for an offline route integration check using real encrypted sessions and a stub database. For a live smoke test, sign in, vote on a caption, and confirm a new row in `caption_votes` with that caption ID, user ID, and vote. Guests see disabled voting buttons, and unauthenticated POST requests are rejected.
 
@@ -85,11 +87,20 @@ With `bun dev` running and the local server key configured, `bun run check:votes
 ```sh
 bun run lint
 bun run check:votes
+bun run check:avatar
 bun run check:supabase
 bun run build
 ```
 
 The Supabase check covers environment aliases, rejection of private keys, the live read-only connection, seeded records, filters, and request cancellation. Environments that restrict Turbopack's internal ports can validate with `bun run build --webpack`.
+
+### Profile photos
+
+Members choose their avatar on `/members`: the photo from their Google account (the default) or a photo they upload. The header shows the chosen avatar, falling back to initials when no photo is available. Switching between the two options keeps the uploaded photo; uploading a new photo replaces it, and **Delete uploaded photo** removes it from storage and returns to the Google photo.
+
+Before uploading, the browser crops the image to a centered square and resizes it to at most 512 × 512 pixels. `/api/avatar` then checks the request origin and Better Auth session, accepts files up to 2 MB, and identifies JPEG, PNG, or WebP from the file's leading bytes rather than its name or declared type. Photos are stored in the public `avatars` Supabase Storage bucket under random object names, so URLs reveal nothing about the member and the bucket cannot be listed. Preferences live in `user_profiles`, keyed by the same email digest as caption votes; RLS is enabled with no policies, and table privileges allow only the server-only key. The `replace_avatar` function swaps or clears the photo atomically and returns the previous object for cleanup.
+
+Apply `supabase/migrations/202610120001_user_avatars.sql` with `supabase db push`; it creates the table, function, and bucket. The feature uses the same `SUPABASE_SECRET_KEY` as voting. Run `bun run check:avatar` for an offline route integration check with real encrypted sessions and stub database and storage services. After applying the migration, with `bun dev` running and the server key configured, `bun run check:avatar:live` verifies the real HTTP, database, and storage flow with a synthetic local session: browser-key denial, bucket type limits, public photo URLs, replacement and concurrent-upload cleanup, source switching, and deletion. It then removes its test profile and photos.
 
 ## Vercel
 

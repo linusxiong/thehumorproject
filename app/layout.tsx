@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Providers } from "./providers";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -17,13 +18,22 @@ export const metadata: Metadata = {
   description: "Small observations and unexpected punchlines. A collection of reasons to take your day a little less seriously.",
 };
 
+// Match the system color scheme before the first paint, and keep following it while the page is open.
+const themeScript = `(function(){var m=matchMedia("(prefers-color-scheme: dark)");function a(){document.documentElement.setAttribute("data-theme",m.matches?"dark":"light")}a();m.addEventListener("change",a)})()`;
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
+      <body className="flex min-h-full flex-col bg-background text-foreground">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

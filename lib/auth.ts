@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { betterAuth } from "better-auth";
 import { oAuthProxy } from "better-auth/plugins";
 
@@ -32,3 +33,8 @@ export const auth = betterAuth({
   account: { storeStateStrategy: "cookie", storeAccountCookie: false },
   onAPIError: { errorURL: "/login" },
 });
+
+// Stateless Better Auth user IDs can change; a verified email identifies returning users.
+export function stableUserId(user: { email: string; emailVerified: boolean }) {
+  return user.emailVerified ? createHash("sha256").update(user.email.trim().toLowerCase()).digest("hex") : null;
+}

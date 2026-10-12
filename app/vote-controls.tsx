@@ -1,10 +1,11 @@
 "use client";
 
-import { Button } from "@heroui/react";
+import { Chip, Spinner, ToggleButton } from "@heroui/react";
 import { useEffect, useRef, useState } from "react";
 import { authClient } from "./auth-controls";
 
-type Votes = { upvotes: number; downvotes: number; user_vote: number | null };
+// The server only sends totals after this account has voted, so they cannot bias the rating.
+type Votes = { user_vote: number | null; upvotes?: number; downvotes?: number };
 
 export function VoteControls({ captionId }: { captionId: number }) {
   const { data: session, isPending } = authClient.useSession();
@@ -28,7 +29,7 @@ export function VoteControls({ captionId }: { captionId: number }) {
           setError("");
         }
       })
-      .catch(() => { if (!controller.signal.aborted) setError("Vote counts could not be loaded. Refresh to retry."); });
+      .catch(() => { if (!controller.signal.aborted) setError("Votes could not be loaded. Refresh to retry."); });
     return () => controller.abort();
   }, [captionId, userId, isPending, busy]);
 
@@ -39,8 +40,8 @@ export function VoteControls({ captionId }: { captionId: number }) {
     setError("");
     const previous = votes;
     const withdraw = votes.user_vote === value;
-    const change = withdraw ? -1 : 1;
-    setVotes({ upvotes: votes.upvotes + (value === 1 ? change : 0), downvotes: votes.downvotes + (value === -1 ? change : 0), user_vote: withdraw ? null : value });
+    // Fresh totals arrive with the reconciling fetch after the vote is saved.
+    setVotes({ user_vote: withdraw ? null : value });
     try {
       const response = await fetch("/api/caption-votes", {
         method: withdraw ? "DELETE" : "POST", headers: { "Content-Type": "application/json" },
@@ -58,19 +59,22 @@ export function VoteControls({ captionId }: { captionId: number }) {
   }
 
   const disabled = isPending || !session || !votes || loadedFor !== userId || busy;
+  const voted = votes?.user_vote != null;
   return (
-    <div className="relative flex gap-1" role="group" aria-label="Rate this caption" aria-busy={busy}
-      title={!session ? "Sign in to vote" : votes?.user_vote != null ? "Click your selected arrow to withdraw your vote" : "Upvote or downvote"}>
+    <div className="flex items-center gap-1" role="group" aria-label="Rate this caption" aria-busy={busy}
+      title={!session ? "Sign in to vote" : voted ? "Click your selected arrow to withdraw your vote" : "Vote to see how others rated this caption"}>
       {([1, -1] as const).map((value) => (
-        <Button key={value} size="sm" variant={votes?.user_vote === value ? "secondary" : "ghost"}
-          className="min-w-0 gap-1 px-2 tabular-nums" isDisabled={disabled || (votes?.user_vote != null && votes.user_vote !== value)}
-          aria-label={votes?.user_vote === value ? (value === 1 ? "Withdraw upvote" : "Withdraw downvote") : (value === 1 ? "Upvote" : "Downvote")} aria-pressed={votes?.user_vote === value}
-          onPress={() => vote(value)}>
-          <span aria-hidden="true" className="text-lg">{value === 1 ? "↑" : "↓"}</span>
-          <span aria-live="polite">{votes ? (value === 1 ? votes.upvotes : votes.downvotes) : "—"}</span>
-        </Button>
+        <ToggleButton key={value} size="sm" variant="ghost" isIconOnly={!voted} isSelected={votes?.user_vote === value}
+          isDisabled={disabled || (voted && votes.user_vote !== value)} onChange={() => vote(value)}
+          aria-label={votes?.user_vote === value ? (value === 1 ? "Withdraw upvote" : "Withdraw downvote") : (value === 1 ? "Upvote" : "Downvote")}>
+          <span aria-hidden="true">{value === 1 ? "↑" : "↓"}</span>
+          {voted && (votes.upvotes === undefined ? <Spinner size="sm" color="current" /> : value === 1 ? votes.upvotes : votes.downvotes)}
+        </ToggleButton>
       ))}
-      {error && <span role="alert" className="text-danger" title={error} aria-label={error}>!</span>}
+      <span className="sr-only" aria-live="polite">
+        {voted && votes.upvotes !== undefined ? `${votes.upvotes} upvotes, ${votes.downvotes} downvotes` : ""}
+      </span>
+      {error && <Chip role="alert" size="sm" color="danger" variant="soft" title={error} aria-label={error}>!</Chip>}
     </div>
   );
 }

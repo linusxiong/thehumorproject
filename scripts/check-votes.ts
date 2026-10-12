@@ -91,10 +91,12 @@ try {
   const counts = await GET(new Request(`${origin}/api/caption-votes?captionId=7`, { headers: { cookie: valid } }));
   assert.deepEqual(await counts.json(), { upvotes: 1, downvotes: 0, user_vote: 1 });
   const guest = await GET(new Request(`${origin}/api/caption-votes?captionId=7`));
-  assert.deepEqual(await guest.json(), { upvotes: 1, downvotes: 0, user_vote: null });
+  assert.deepEqual(await guest.json(), { user_vote: null }, "Guests never see totals");
   assert.equal((await GET(new Request(`${origin}/api/caption-votes?captionId=-1`))).status, 400);
   const withdrawal = { captionId: 7, vote: 1, user_id: userId };
   const stranger = await cookie(false, "other-user", true, "other@example.com");
+  const unrated = await GET(new Request(`${origin}/api/caption-votes?captionId=7`, { headers: { cookie: stranger } }));
+  assert.deepEqual(await unrated.json(), { user_vote: null }, "Totals stay hidden until the account has voted");
   assert.equal((await post(withdrawal, stranger, origin, true)).status, 200);
   assert.equal(saved.length, 2, "An account cannot delete another account's vote");
   assert.equal((await post({ ...withdrawal, vote: -1 }, valid, origin, true)).status, 200);
@@ -102,8 +104,10 @@ try {
   for (let i = 0; i < 2; i++) assert.equal((await post(withdrawal, valid, origin, true)).status, 200);
   assert.equal(saved.length, 1);
   const withdrawn = await GET(new Request(`${origin}/api/caption-votes?captionId=7`, { headers: { cookie: valid } }));
-  assert.deepEqual(await withdrawn.json(), { upvotes: 0, downvotes: 0, user_vote: null });
+  assert.deepEqual(await withdrawn.json(), { user_vote: null });
   assert.equal((await post({ captionId: 7, vote: -1 }, valid)).status, 201);
+  const revoted = await GET(new Request(`${origin}/api/caption-votes?captionId=7`, { headers: { cookie: valid } }));
+  assert.deepEqual(await revoted.json(), { upvotes: 0, downvotes: 1, user_vote: -1 });
   assert.equal((await post({ captionId: 7, vote: 1 }, valid)).status, 409);
   databaseError = "23503";
   assert.equal((await post(input, valid)).status, 404);
@@ -113,7 +117,7 @@ try {
   delete process.env.SUPABASE_SECRET_KEY;
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   assert.equal((await post(input, valid)).status, 503);
-  console.log("PASS: Vote inserts, withdrawal ownership, re-voting, trusted user identity, guest/expired/tampered session rejection, CSRF, invalid input, missing captions, database errors, and missing configuration.");
+  console.log("PASS: Vote inserts, totals hidden until voting, withdrawal ownership, re-voting, trusted user identity, guest/expired/tampered session rejection, CSRF, invalid input, missing captions, database errors, and missing configuration.");
 } finally {
   globalThis.fetch = originalFetch;
 }

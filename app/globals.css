@@ -1,30 +1,18 @@
 @import "tailwindcss";
 @import "@heroui/styles";
 
+/* Brand green: the original color in light mode, a lighter green with dark text in dark mode. */
 :root {
-  --background: #f7f8f4;
-  --foreground: #263a30;
-  --surface: #ffffff;
-  --accent: #28644a;
-  --accent-foreground: #ffffff;
-  --muted: #68756d;
-  --border: #e1e6dd;
-  --field-border-width: 1px;
-  --field-border: var(--border);
-  --field-shadow: none;
+  --accent: oklch(0.4558 0.0761 162.39);
+  --accent-foreground: var(--snow);
+}
+
+[data-theme="dark"] {
+  --accent: oklch(0.72 0.12 162.39);
+  --accent-foreground: var(--eclipse);
 }
 
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, sans-serif;
-}
-
-::selection {
-  background: #dbeadd;
 }

@@ -1,15 +1,12 @@
-import { createHash } from "node:crypto";
-import { createClient } from "@supabase/supabase-js";
-import { auth } from "@/lib/auth";
+import { auth, stableUserId } from "@/lib/auth";
+import { createServerSupabase } from "@/lib/supabase-server";
+
+type VoteSummary = { upvotes: number; downvotes: number; user_vote: number | null };
 
 async function votingContext(request: Request, captionId: number) {
   const session = await auth.api.getSession({ headers: request.headers });
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const client = url && key ? createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
-  // Stateless Better Auth user IDs can change; verified email identifies returning voters.
-  const userId = session?.user.emailVerified
-    ? createHash("sha256").update(session.user.email.trim().toLowerCase()).digest("hex") : null;
+  const client = createServerSupabase();
+  const userId = session ? stableUserId(session.user) : null;
   if (client && userId && session && Number.isSafeInteger(captionId) && captionId > 0) {
     // Bind historical votes to the stable identity while their original session is available.
     const { error } = await client.from("caption_votes").update({ user_id: userId })
@@ -28,9 +25,11 @@ export async function GET(request: Request) {
     const { client, userId } = await votingContext(request, captionId);
     if (!client) return Response.json({ error: "Voting is not configured yet." }, { status: 503 });
     const { data, error } = await client.rpc("caption_vote_summary", { p_caption_id: captionId, p_user_id: userId })
-      .abortSignal(AbortSignal.timeout(15_000)).single();
+      .abortSignal(AbortSignal.timeout(15_000)).single<VoteSummary>();
     if (error) throw error;
-    return Response.json(data, { headers: { "Cache-Control": "private, no-store" } });
+    // Counts stay hidden until this account has rated the caption, so totals cannot bias the vote.
+    const summary = data.user_vote === null ? { user_vote: null } : data;
+    return Response.json(summary, { headers: { "Cache-Control": "private, no-store" } });
   } catch {
     return Response.json({ error: "Vote counts could not be loaded. Please try again." }, { status: 500 });
   }

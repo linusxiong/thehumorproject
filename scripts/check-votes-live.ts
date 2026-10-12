@@ -35,8 +35,11 @@ const counts = async (session = "") => {
   return response.json();
 };
 try {
-  const before = await counts();
-  assert.equal(before.user_vote, null);
+  assert.deepEqual(await counts(), { user_vote: null }, "Guests never see totals");
+  const { data: before, error: summaryError } = await client.rpc("caption_vote_summary", { p_caption_id: caption.id })
+    .single<{ upvotes: number; downvotes: number }>();
+  assert.ifError(summaryError);
+  assert(before);
   assert.equal((await post(1)).status, 401);
   assert.equal((await post(1, "", true)).status, 401);
   const firstCookie = await cookie(emails[0]);
@@ -44,6 +47,7 @@ try {
   assert.deepEqual(attempts.map(response => response.status).sort(), [201, 409]);
   assert.equal((await post(-1, await cookie(emails[0]))).status, 409, "A new login must not permit another vote");
   const secondCookie = await cookie(emails[1]);
+  assert.deepEqual(await counts(secondCookie), { user_vote: null }, "Totals stay hidden until the account has voted");
   assert.equal((await post(-1, secondCookie)).status, 201);
   const after = await counts(firstCookie);
   assert.deepEqual(after, { upvotes: before.upvotes + 1, downvotes: before.downvotes + 1, user_vote: 1 });
@@ -57,7 +61,8 @@ try {
   assert.deepEqual(await counts(firstCookie), after, "Another account cannot withdraw the first account's vote");
   assert.equal((await post(1, firstCookie, true)).status, 200);
   assert.equal((await post(1, firstCookie, true)).status, 200);
-  assert.deepEqual(await counts(firstCookie), { upvotes: before.upvotes, downvotes: before.downvotes + 1, user_vote: null });
+  assert.deepEqual(await counts(firstCookie), { user_vote: null });
+  assert.deepEqual(await counts(secondCookie), { upvotes: before.upvotes, downvotes: before.downvotes + 1, user_vote: -1 });
   assert.equal((await post(-1, firstCookie)).status, 201);
   assert.deepEqual(await counts(firstCookie), { upvotes: before.upvotes, downvotes: before.downvotes + 2, user_vote: -1 });
   assert.equal((await post(1, firstCookie)).status, 409);
@@ -68,4 +73,4 @@ try {
   const { error: cleanupError } = await client.from("caption_votes").delete().in("user_id", userIds);
   assert.ifError(cleanupError);
 }
-console.log("PASS: Live counts, upvotes/downvotes, simultaneous duplicate rejection, returning-user identity, withdrawal ownership, re-voting, and guest rejection; test votes removed.");
+console.log("PASS: Live counts hidden until voting, upvotes/downvotes, simultaneous duplicate rejection, returning-user identity, withdrawal ownership, re-voting, and guest rejection; test votes removed.");
