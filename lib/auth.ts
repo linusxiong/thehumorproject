@@ -8,7 +8,7 @@ if (!baseURL || !process.env.BETTER_AUTH_SECRET || !process.env.OAUTH_PROXY_SECR
 }
 
 export const auth = betterAuth({
-  appName: "The Humor Project",
+  appName: "Punchline Passport",
   baseURL,
   secret: process.env.BETTER_AUTH_SECRET,
   trustedOrigins: [

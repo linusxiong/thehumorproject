@@ -5,30 +5,70 @@ import { createAuthClient } from "better-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { avatarUrl, useAvatarProfile, UserAvatar } from "./avatar";
+import { useLocale, type Messages } from "./locale";
 
 export const authClient = createAuthClient();
+
+const en = {
+  sessionError: "Unable to check sign-in. Please try again.",
+  signInFailed: "Sign in failed. Please try again.",
+  signOutFailed: "Sign out failed. Please try again.",
+  continueWithGoogle: "Continue with Google",
+  accountMenuFor: (name: string) => `Account menu for ${name}`,
+  account: "Account",
+  membersArea: "Members area",
+  changePhoto: "Change your profile photo",
+  signOut: "Sign out",
+};
+
+const messages: Messages<typeof en> = {
+  en,
+  es: {
+    sessionError: "No se pudo comprobar tu sesión. Inténtalo de nuevo.",
+    signInFailed: "No se pudo iniciar sesión. Inténtalo de nuevo.",
+    signOutFailed: "No se pudo cerrar sesión. Inténtalo de nuevo.",
+    continueWithGoogle: "Continuar con Google",
+    accountMenuFor: (name) => `Menú de la cuenta de ${name}`,
+    account: "Cuenta",
+    membersArea: "Área de miembros",
+    changePhoto: "Cambia tu foto de perfil",
+    signOut: "Cerrar sesión",
+  },
+  zh: {
+    sessionError: "无法检查登录状态，请重试。",
+    signInFailed: "登录失败，请重试。",
+    signOutFailed: "退出登录失败，请重试。",
+    continueWithGoogle: "使用 Google 继续",
+    accountMenuFor: (name) => `${name} 的账户菜单`,
+    account: "账户",
+    membersArea: "会员专区",
+    changePhoto: "更换头像",
+    signOut: "退出登录",
+  },
+};
 
 export function AuthControls() {
   const router = useRouter();
   const { data: session, isPending, error: sessionError } = authClient.useSession();
   const { profile } = useAvatarProfile(session?.user.id);
   const [busy, setBusy] = useState(false);
+  const t = messages[useLocale()];
 
   useEffect(() => {
-    if (sessionError) toast.danger("Unable to check sign-in. Please try again.");
-  }, [sessionError]);
+    if (sessionError) toast.danger(t.sessionError);
+  }, [sessionError, t]);
 
   async function signIn() {
     setBusy(true);
     try {
       const result = await authClient.signIn.social({
         provider: "google",
-        callbackURL: new URL("/members", window.location.origin).href,
+        callbackURL: new URL("/", window.location.origin).href,
         errorCallbackURL: new URL("/login", window.location.origin).href,
       });
       if (result.error) throw new Error();
     } catch {
-      toast.danger("Sign in failed. Please try again.");
+      toast.danger(t.signInFailed);
     } finally {
       setBusy(false);
     }
@@ -37,7 +77,7 @@ export function AuthControls() {
   async function signOut() {
     const result = await authClient.signOut().catch(() => null);
     if (!result || result.error) {
-      toast.danger("Sign out failed. Please try again.");
+      toast.danger(t.signOutFailed);
       return;
     }
     router.replace("/");
@@ -52,7 +92,7 @@ export function AuthControls() {
         {({ isPending: pending }) => (
           <>
             {pending && <Spinner size="sm" color="current" />}
-            Continue with Google
+            {t.continueWithGoogle}
           </>
         )}
       </Button>
@@ -61,23 +101,23 @@ export function AuthControls() {
 
   return (
     <Dropdown>
-      <Dropdown.Trigger className="rounded-full" aria-label={`Account menu for ${session.user.name}`}>
+      <Dropdown.Trigger className="rounded-full" aria-label={t.accountMenuFor(session.user.name)}>
         <UserAvatar name={session.user.name} src={avatarUrl(profile)} size="sm" />
       </Dropdown.Trigger>
       <Dropdown.Popover placement="bottom end">
-        <Dropdown.Menu aria-label="Account" onAction={(key) => { if (key === "sign-out") signOut(); }}>
+        <Dropdown.Menu aria-label={t.account} onAction={(key) => { if (key === "sign-out") signOut(); }}>
           <Dropdown.Section>
             <Header>{session.user.name}</Header>
-            <Dropdown.Item id="members" href="/members" textValue="Members area">
+            <Dropdown.Item id="members" href="/members" textValue={t.membersArea}>
               <div className="flex flex-col">
-                <Label>Members area</Label>
-                <Description>Change your profile photo</Description>
+                <Label>{t.membersArea}</Label>
+                <Description>{t.changePhoto}</Description>
               </div>
             </Dropdown.Item>
           </Dropdown.Section>
           <Separator />
-          <Dropdown.Item id="sign-out" textValue="Sign out" variant="danger">
-            <Label>Sign out</Label>
+          <Dropdown.Item id="sign-out" textValue={t.signOut} variant="danger">
+            <Label>{t.signOut}</Label>
           </Dropdown.Item>
         </Dropdown.Menu>
       </Dropdown.Popover>

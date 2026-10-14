@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "The Humor Project | A little humor, every day",
-  description: "Small observations and unexpected punchlines. A collection of reasons to take your day a little less seriously.",
+  title: "Punchline Passport | One joke, three cultures",
+  description: "Share a joke in English, Spanish, or Chinese and Punchline Passport retells it for the other two cultures. Rate whether each version is still funny.",
 };
 
 // Match the system color scheme before the first paint, and keep following it while the page is open.
