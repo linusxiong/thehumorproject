@@ -16,7 +16,7 @@ import { audienceCultures, nativeNames, setLocale, useLocale, type Messages } fr
 const en = {
   language: "Your language",
   languageHint: "Sets the interface language and which version of each joke opens first.",
-  feedTitle: "Recent jokes",
+  feedTitle: "Jokes from around the world",
   count: (count: number) => `${count} ${count === 1 ? "joke" : "jokes"}`,
   loaded: (count: number) => `${count} ${count === 1 ? "joke" : "jokes"} loaded`,
   loadingJokes: "Loading jokes",
@@ -30,7 +30,7 @@ const en = {
   filterLabel: "Show",
   filters: { all: "All", member: "Members", import: sourceName("Qiushibaike", "en"), demo: "Demo" },
   sortLabel: "Sort by",
-  sorts: { newest: "Newest", rated: "Most rated" },
+  sorts: { recommended: "Recommended", newest: "Newest", rated: "Most rated" },
   noMatch: "No jokes match this filter yet.",
 };
 
@@ -39,7 +39,7 @@ const messages: Messages<typeof en> = {
   es: {
     language: "Tu idioma",
     languageHint: "Define el idioma de la interfaz y qué versión de cada chiste se abre primero.",
-    feedTitle: "Chistes recientes",
+    feedTitle: "Chistes de todo el mundo",
     count: (count) => `${count} ${count === 1 ? "chiste" : "chistes"}`,
     loaded: (count) => `${count} ${count === 1 ? "chiste cargado" : "chistes cargados"}`,
     loadingJokes: "Cargando chistes",
@@ -53,13 +53,13 @@ const messages: Messages<typeof en> = {
     filterLabel: "Mostrar",
     filters: { all: "Todos", member: "Miembros", import: sourceName("Qiushibaike", "es"), demo: "Demo" },
     sortLabel: "Ordenar por",
-    sorts: { newest: "Más recientes", rated: "Más votados" },
+    sorts: { recommended: "Recomendados", newest: "Más recientes", rated: "Más votados" },
     noMatch: "Todavía no hay chistes con este filtro.",
   },
   zh: {
     language: "你的语言",
     languageHint: "设置界面语言，以及每个笑话优先显示的版本。",
-    feedTitle: "最新笑话",
+    feedTitle: "来自世界各地的笑话",
     count: (count) => `${count} 个笑话`,
     loaded: (count) => `已加载 ${count} 个笑话`,
     loadingJokes: "正在加载笑话",
@@ -73,14 +73,19 @@ const messages: Messages<typeof en> = {
     filterLabel: "显示",
     filters: { all: "全部", member: "会员", import: sourceName("Qiushibaike", "zh"), demo: "示例" },
     sortLabel: "排序",
-    sorts: { newest: "最新", rated: "评分最多" },
+    sorts: { recommended: "推荐", newest: "最新", rated: "评分最多" },
     noMatch: "暂时没有符合筛选条件的笑话。",
   },
 };
 
 type Filter = keyof typeof en.filters;
 type Sort = keyof typeof en.sorts;
-type Feed = { key: string; jokes: Joke[]; failed: { status: number | null } | null };
+const isSort = (key: unknown): key is Sort => typeof key === "string" && key in en.sorts;
+// Random position per joke for the Recommended order; jokes added later (no rank) go first.
+type Shuffle = Record<number, number>;
+type Feed = { key: string; jokes: Joke[]; shuffle: Shuffle; failed: { status: number | null } | null };
+
+const shuffled = (jokes: Joke[]): Shuffle => Object.fromEntries(jokes.map((joke) => [joke.id, Math.random()]));
 
 // Ratings the viewer can see; hidden totals count as zero so sorting never leaks them.
 const visibleRatings = (joke: Joke) => joke.revealed
@@ -101,7 +106,7 @@ export function JokesExplorer() {
   const [feed, setFeed] = useState<Feed | null>(null);
   const [revision, setRevision] = useState(0);
   const [filter, setFilter] = useState<Filter>("all");
-  const [sort, setSort] = useState<Sort>("newest");
+  const [sort, setSort] = useState<Sort>("recommended");
   const feedKey = `${userId ?? "guest"}:${revision}`;
 
   // Ratings and revealed totals depend on the viewer, so reload whenever the signed-in user changes.
@@ -112,11 +117,11 @@ export function JokesExplorer() {
       .then(async (response) => {
         if (!response.ok) throw new ApiError(response.status);
         const jokes = await response.json() as Joke[];
-        if (!controller.signal.aborted) setFeed({ key: feedKey, jokes, failed: null });
+        if (!controller.signal.aborted) setFeed({ key: feedKey, jokes, shuffle: shuffled(jokes), failed: null });
       })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) {
-          setFeed((current) => ({ key: feedKey, jokes: current?.jokes ?? [], failed: { status: errorStatus(reason) } }));
+          setFeed((current) => ({ key: feedKey, jokes: current?.jokes ?? [], shuffle: current?.shuffle ?? {}, failed: { status: errorStatus(reason) } }));
         }
       });
     return () => controller.abort();
@@ -133,9 +138,18 @@ export function JokesExplorer() {
   const jokes = feed?.jokes ?? [];
   const busy = sessionPending || feed?.key !== feedKey;
   const error = busy || !feed?.failed ? null : apiErrorMessage(locale, feed.failed.status, t.loadFailed);
-  const shown = jokes
-    .filter((joke) => filter === "all" || joke.origin === filter)
-    .sort((a, b) => (sort === "rated" ? visibleRatings(b) - visibleRatings(a) : 0) || b.created_at.localeCompare(a.created_at));
+  const shuffle = feed?.shuffle ?? {};
+  const order = (a: Joke, b: Joke) => {
+    if (sort === "recommended") return (shuffle[a.id] ?? -1) - (shuffle[b.id] ?? -1);
+    return (sort === "rated" ? visibleRatings(b) - visibleRatings(a) : 0) || b.created_at.localeCompare(a.created_at);
+  };
+  const shown = jokes.filter((joke) => filter === "all" || joke.origin === filter).sort(order);
+
+  // Choosing Recommended again draws a fresh random order.
+  function chooseSort(key: Sort) {
+    if (key === "recommended") setFeed((current) => (current ? { ...current, shuffle: shuffled(current.jokes) } : current));
+    setSort(key);
+  }
 
   return (
     <div className="flex flex-col gap-16">
@@ -198,7 +212,7 @@ export function JokesExplorer() {
             <ToggleButtonGroup aria-label={t.sortLabel} size="sm" selectionMode="single" disallowEmptySelection
               selectedKeys={[sort]} onSelectionChange={(keys) => {
                 const [key] = keys;
-                if (key === "newest" || key === "rated") setSort(key);
+                if (isSort(key)) chooseSort(key);
               }}>
               {(Object.keys(t.sorts) as Sort[]).map((key) => (
                 <ToggleButton key={key} id={key}>{t.sorts[key]}</ToggleButton>
