@@ -13,6 +13,18 @@ export const isAudienceId = (value: unknown): value is AudienceId =>
 
 export const jokeLength = { min: 10, max: 600 } as const;
 export const dailyJokeLimit = 10;
+// Explanations of what makes a joke funny: from the author while sharing, or from any member afterwards.
+export const explanationLength = { min: 5, max: 500 } as const;
+export const dailyExplanationLimit = 10;
+
+// The model's reading of a joke before it is shared, shown so the author can confirm or correct it.
+export type JokeAnalysis = {
+  sourceLanguage: AudienceId;
+  // Sexual or otherwise adult humor; such jokes are allowed and labeled 18+.
+  adult: boolean;
+  // What makes the joke funny, in the reader's interface language, including hidden puns, homophones, and innuendo.
+  punchline: string;
+};
 
 // Platform commentary written once per interface language.
 export type Localized = Record<AudienceId, string>;
@@ -44,6 +56,11 @@ export type Joke = {
   // The member's chosen avatar (uploaded photo or Google photo); null for imported and demo jokes or when unknown.
   author_avatar_url: string | null;
   created_at: string;
+  // Sexual or otherwise adult humor, shown with an 18+ label.
+  adult: boolean;
+  // The accepted explanation of what makes the joke funny, and who wrote it (the author or a community member).
+  explanation: string | null;
+  explained_by: string | null;
   // True once the signed-in viewer has rated any version of this joke; totals stay hidden until then.
   revealed: boolean;
   adaptations: Adaptation[];

@@ -20,6 +20,8 @@ Object.assign(process.env, {
 // Import after setting env: lib/auth.ts validates its configuration at module load.
 const jokesRoute = await import("../app/api/jokes/route");
 const ratingsRoute = await import("../app/api/joke-ratings/route");
+const analyzeRoute = await import("../app/api/jokes/analyze/route");
+const explanationsRoute = await import("../app/api/joke-explanations/route");
 const digest = (email: string) => createHash("sha256").update(email).digest("hex");
 const userId = digest("joke-check@example.com");
 const limitedId = digest("limited@example.com");
@@ -28,27 +30,42 @@ const googlePhoto = "https://lh3.googleusercontent.com/a/joke-check";
 const rememberedPhotos = new Map<string, string>();
 const uploadedPhotos = new Map<string, string>();
 
-type Row = { id: number; body: string; source_language: string; origin: string; source_label: string | null; author_id: string | null; author_name: string; created_at: string };
+type Row = {
+  id: number; body: string; source_language: string; origin: string; source_label: string | null; author_id: string | null; author_name: string; created_at: string;
+  adult: boolean; explanation: string | null; explained_by: string | null;
+};
 type Localized = Record<string, string>;
 type AdaptationRow = { id: number; joke_id: number; audience: string; body: string; gloss: Localized; punchline_core: Localized; notes: Localized };
-const jokes: Row[] = [{ id: 1, body: "Why did the scarecrow win an award? He was outstanding in his field.", source_language: "en", origin: "demo", source_label: null, author_id: null, author_name: "Demo", created_at: "2026-10-01T00:00:00.000Z" }];
+const jokes: Row[] = [{
+  id: 1, body: "Why did the scarecrow win an award? He was outstanding in his field.", source_language: "en", origin: "demo", source_label: null,
+  author_id: null, author_name: "Demo", created_at: "2026-10-01T00:00:00.000Z", adult: false, explanation: null, explained_by: null,
+}];
 const adaptations: AdaptationRow[] = ["en", "es", "zh"].map((audience, index) => ({
   id: index + 1, joke_id: 1, audience, body: `Demo ${audience}`, gloss: { en: `Demo ${audience} gloss` }, punchline_core: { en: "Pun on outstanding." }, notes: { en: "Demo notes." },
 }));
 const ratings: { adaptation_id: number; user_id: string; funny: boolean }[] = [{ adaptation_id: 2, user_id: digest("other@example.com"), funny: true }];
+// joke_explanations stand-in: every explanation a member supplied for an existing joke, accepted or rejected.
+const explanations: { joke_id: number; user_id: string; author_name: string; explanation: string; accepted: boolean; created_at: string }[] = [];
 const hoursAgo = (hours: number) => new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 const member = (id: number, body: string, authorId: string, authorName: string, createdAt: string): Row =>
-  ({ id, body, source_language: "en", origin: "member", source_label: null, author_id: authorId, author_name: authorName, created_at: createdAt });
+  ({ id, body, source_language: "en", origin: "member", source_label: null, author_id: authorId, author_name: authorName, created_at: createdAt, adult: false, explanation: null, explained_by: null });
 for (let i = 0; i < 10; i++) jokes.push(member(100 + i, "Limited joke body", limitedId, "Limited", hoursAgo(i + 1)));
 jokes.push(member(200, "Old joke body text", userId, "Joke", hoursAgo(30)));
 for (let i = 0; i < 9; i++) jokes.push(member(300 + i, "Older joke body", userId, "Joke", hoursAgo(25 + i)));
 
 // ok: three valid versions; partial: the Spanish version has an empty body and the Chinese notes are too long;
-// invalid: every version is broken; other: an unsupported language; truncated: stop_reason max_tokens; refusal: declined content.
+// invalid: every version is broken (for analysis: an empty punchline); other: an unsupported language;
+// truncated: stop_reason max_tokens; refusal: declined content.
 type Mode = "ok" | "partial" | "invalid" | "unsuitable" | "other" | "error" | "malformed" | "truncated" | "refusal";
 let claudeMode: Mode = "ok";
 let claudeSource = "en";
+let claudeAdult = false;
+// explanation_accepted in adaptation answers.
+let claudeAccepts = true;
 let claudeRequests = 0;
+// The explanation the route should send inside <explanation> tags, and the language an analysis should answer in.
+let expectedExplanation: string | null = null;
+let expectedLanguage = "English";
 let nextJokeId = 1000;
 let nextAdaptationId = 1000;
 
@@ -58,7 +75,7 @@ function feed(viewer: string | null, jokeId: number | null, limit: number) {
     .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id).slice(0, limit)
     .map((joke) => ({
       id: joke.id, body: joke.body, source_language: joke.source_language, origin: joke.origin, source_label: joke.source_label,
-      author_name: joke.author_name, created_at: joke.created_at,
+      author_name: joke.author_name, created_at: joke.created_at, adult: joke.adult, explanation: joke.explanation, explained_by: joke.explained_by,
       author_avatar_path: joke.author_id && uploadedPhotos.has(joke.author_id) ? uploadedPhotos.get(joke.author_id) : null,
       author_google_url: joke.author_id ? rememberedPhotos.get(joke.author_id) ?? null : null,
       adaptations: adaptations.filter((row) => row.joke_id === joke.id).sort((a, b) => order.indexOf(a.audience) - order.indexOf(b.audience))
@@ -83,29 +100,52 @@ function claude(init: RequestInit | undefined) {
   assert.equal(headers.get("x-api-key"), apiKey);
   assert.equal(headers.get("anthropic-version"), "2023-06-01");
   const request = JSON.parse(String(init?.body));
+  const schema = request.output_config.format.schema;
+  // Analysis requests are told apart from adaptation requests by their answer schema.
+  const analysis = "punchline" in schema.properties;
   assert.equal(request.model, "claude-haiku-5-5");
-  assert.equal(request.max_tokens, 16_000);
+  assert.equal(request.max_tokens, analysis ? 8_000 : 16_000);
   assert.equal(request.tools, undefined, "JSON outputs keep adaptive thinking available; forced tools would disable it");
   assert.equal(request.output_config.effort, "medium");
   assert.equal(request.output_config.format.type, "json_schema");
-  assert.deepEqual(request.output_config.format.schema.required, ["source_language", "suitable", "versions"]);
-  assert.deepEqual(request.output_config.format.schema.properties.versions.required, ["en", "es", "zh"]);
   assert.match(request.system, /Punchline Passport/);
+  assert.match(request.system, /上来自己动/, "The prompt teaches hidden homophones and innuendo");
   assert.equal(request.messages.length, 1);
-  assert.equal(request.messages[0].content, `<joke>\n${submitted}\n</joke>`);
+  if (analysis) {
+    assert.deepEqual(schema.required, ["suitable", "source_language", "adult", "punchline"]);
+    assert.ok(request.system.includes(`in ${expectedLanguage}`), "The punchline is written in the reader's interface language");
+    assert.equal(request.messages[0].content, `<joke>\n${submitted}\n</joke>`);
+  } else {
+    assert.deepEqual(schema.required, ["source_language", "suitable", "adult", "explanation_accepted", "versions"]);
+    assert.deepEqual(schema.properties.versions.required, ["en", "es", "zh"]);
+    assert.equal(request.messages[0].content, expectedExplanation === null
+      ? `<joke>\n${submitted}\n</joke>`
+      : `<joke>\n${submitted}\n</joke>\n<explanation>\n${expectedExplanation}\n</explanation>`);
+  }
   claudeRequests++;
   if (claudeMode === "error") return Response.json({ type: "error", error: { type: "overloaded_error" } }, { status: 529 });
   if (claudeMode === "malformed") return Response.json({ content: [{ type: "text", text: "Not JSON." }], stop_reason: "end_turn" });
   if (claudeMode === "refusal") return Response.json({ content: [], stop_reason: "refusal" });
+  if (analysis) {
+    const answer = {
+      suitable: claudeMode !== "unsuitable", source_language: claudeMode === "other" ? "other" : claudeSource, adult: claudeAdult,
+      punchline: claudeMode === "invalid" ? "   " : "  We hear a pun.  ",
+    };
+    return Response.json({
+      content: [{ type: "thinking", thinking: "" }, { type: "text", text: JSON.stringify(answer) }],
+      stop_reason: claudeMode === "truncated" ? "max_tokens" : "end_turn",
+    });
+  }
   const versions = { en: version("en"), es: version("es"), zh: version("zh") };
   if (claudeMode === "partial" || claudeMode === "invalid") {
     versions.es.body = "   ";
     versions.zh.notes.en = "x".repeat(1001);
   }
   if (claudeMode === "invalid") versions.en.punchline_core = "Not localized" as never;
-  const input = claudeMode === "unsuitable"
-    ? { suitable: false, source_language: claudeSource, versions }
-    : { suitable: true, source_language: claudeMode === "other" ? "other" : claudeSource, versions };
+  const input = {
+    suitable: claudeMode !== "unsuitable", source_language: claudeMode === "other" ? "other" : claudeSource,
+    adult: claudeAdult, explanation_accepted: claudeAccepts, versions,
+  };
   return Response.json({
     content: [{ type: "thinking", thinking: "" }, { type: "text", text: JSON.stringify(input) }],
     stop_reason: claudeMode === "truncated" ? "max_tokens" : "end_turn",
@@ -123,16 +163,51 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     case "/rest/v1/rpc/joke_feed":
       return Response.json(feed(body.p_user_id, body.p_joke_id, body.p_limit));
     case "/rest/v1/rpc/create_joke": {
-      assert.deepEqual(Object.keys(body).sort(), ["p_adaptations", "p_author_id", "p_author_name", "p_body", "p_source_language"]);
+      assert.deepEqual(Object.keys(body).sort(), [
+        "p_adaptations", "p_adult", "p_author_id", "p_author_name", "p_body", "p_explained_by", "p_explanation", "p_source_language",
+      ]);
       const id = nextJokeId++;
-      jokes.push({ ...member(id, body.p_body, body.p_author_id, body.p_author_name, new Date().toISOString()), source_language: body.p_source_language });
+      jokes.push({
+        ...member(id, body.p_body, body.p_author_id, body.p_author_name, new Date().toISOString()),
+        source_language: body.p_source_language, adult: body.p_adult, explanation: body.p_explanation, explained_by: body.p_explained_by,
+      });
       for (const row of body.p_adaptations) adaptations.push({ ...row, id: nextAdaptationId++, joke_id: id });
       return Response.json(id);
     }
+    case "/rest/v1/rpc/readapt_joke": {
+      assert.deepEqual(Object.keys(body).sort(), ["p_adaptations", "p_adult", "p_author_name", "p_explanation", "p_joke_id", "p_user_id"]);
+      const target = jokes.find((item) => item.id === body.p_joke_id);
+      if (!target) return Response.json({ code: "P0002", message: "joke does not exist" }, { status: 404 });
+      Object.assign(target, { adult: body.p_adult, explanation: body.p_explanation, explained_by: body.p_author_name });
+      explanations.push({
+        joke_id: target.id, user_id: body.p_user_id, author_name: body.p_author_name, explanation: body.p_explanation, accepted: true, created_at: new Date().toISOString(),
+      });
+      // Deleting the old versions cascades to their ratings.
+      const removed = new Set(adaptations.filter((row) => row.joke_id === target.id).map((row) => row.id));
+      adaptations.splice(0, adaptations.length, ...adaptations.filter((row) => !removed.has(row.id)));
+      ratings.splice(0, ratings.length, ...ratings.filter((row) => !removed.has(row.adaptation_id)));
+      for (const row of body.p_adaptations) adaptations.push({ ...row, id: nextAdaptationId++, joke_id: target.id });
+      return new Response(null, { status: 204 });
+    }
     case "/rest/v1/jokes": {
+      if (init?.method === "GET") {
+        assert.equal(url.searchParams.get("select"), "body");
+        return Response.json(jokes.filter((joke) => joke.id === Number(value("id"))).map((joke) => ({ body: joke.body })));
+      }
       assert.equal(init?.method, "HEAD");
       const since = value("created_at") ?? "";
       const count = jokes.filter((joke) => joke.author_id === value("author_id") && joke.created_at > since).length;
+      return new Response(null, { status: 200, headers: { "content-range": `*/${count}` } });
+    }
+    case "/rest/v1/joke_explanations": {
+      if (init?.method === "POST") {
+        assert.deepEqual(Object.keys(body).sort(), ["accepted", "author_name", "explanation", "joke_id", "user_id"]);
+        explanations.push({ ...body, created_at: new Date().toISOString() });
+        return new Response(null, { status: 201 });
+      }
+      assert.equal(init?.method, "HEAD");
+      const since = value("created_at") ?? "";
+      const count = explanations.filter((row) => row.user_id === value("user_id") && row.created_at > since).length;
       return new Response(null, { status: 200, headers: { "content-range": `*/${count}` } });
     }
     case "/rest/v1/joke_adaptations":
@@ -176,6 +251,8 @@ const send = (handler: (request: Request) => Promise<Response>, path: string, me
 const share = (body: unknown, session = "", requestOrigin = origin) => send(jokesRoute.POST, "/api/jokes", "POST", body, session, requestOrigin);
 const rate = (body: unknown, session = "", requestOrigin = origin) => send(ratingsRoute.POST, "/api/joke-ratings", "POST", body, session, requestOrigin);
 const withdraw = (body: unknown, session = "", requestOrigin = origin) => send(ratingsRoute.DELETE, "/api/joke-ratings", "DELETE", body, session, requestOrigin);
+const analyze = (body: unknown, session = "", requestOrigin = origin) => send(analyzeRoute.POST, "/api/jokes/analyze", "POST", body, session, requestOrigin);
+const explain = (body: unknown, session = "", requestOrigin = origin) => send(explanationsRoute.POST, "/api/joke-explanations", "POST", body, session, requestOrigin);
 const list = async (session = "") => {
   const response = await jokesRoute.GET(new Request(`${origin}/api/jokes`, { headers: { cookie: session } }));
   assert.equal(response.status, 200);
@@ -185,6 +262,7 @@ const list = async (session = "") => {
 const hasCounts = (joke: Joke) => joke.adaptations.some((adaptation) => "funny" in adaptation || "not_funny" in adaptation);
 const joke = "My therapist says I have a preoccupation with vengeance. We'll see about that.";
 const spanishJoke = "¿Qué le dice un jardinero a otro? Disfrutemos mientras podamos.";
+const fridgeJoke = "冰箱和冰激凌分手了，冰激凌哭着说：“你让我留了好多水。”冰箱开门说，上来自己冻。";
 // The exact joke text the route should send inside <joke> tags.
 let submitted = joke;
 
@@ -324,6 +402,143 @@ try {
   assert.ok(!hasCounts(withdrawnJoke) && withdrawnJoke.adaptations.every((adaptation) => adaptation.user_rating === null));
   assert.equal((await withdraw({ adaptationId: english.id }, valid)).status, 200, "Withdrawing twice is harmless");
 
+  // Step one of sharing: the analysis explains the punchline in the reader's language and stores nothing.
+  assert.equal(analyzeRoute.maxDuration, 120);
+  claudeRequests = 0;
+  const storedBeforeAnalysis = jokes.length;
+  for (const session of ["", "better-auth.session_data=forged", await cookie(true)]) {
+    assert.equal((await analyze({ body: joke, locale: "en" }, session)).status, 401);
+  }
+  for (const requestOrigin of ["https://evil.example", ""]) assert.equal((await analyze({ body: joke, locale: "en" }, valid, requestOrigin)).status, 403);
+  assert.equal((await analyze({ body: joke, locale: "en" }, unverified)).status, 403);
+  for (const body of [null, {}, { body: 42, locale: "en" }, { body: "too short", locale: "en" }, { body: "x".repeat(601), locale: "en" }, { body: joke }, { body: joke, locale: "fr" }]) {
+    assert.equal((await analyze(body, valid)).status, 400);
+  }
+  delete process.env.ANTHROPIC_API_KEY;
+  assert.equal((await analyze({ body: joke, locale: "en" }, valid)).status, 503);
+  process.env.ANTHROPIC_API_KEY = apiKey;
+  assert.equal(claudeRequests, 0);
+  for (const mode of ["unsuitable", "other", "refusal"] as const) {
+    claudeMode = mode;
+    const rejected = await analyze({ body: joke, locale: "en" }, valid);
+    assert.equal(rejected.status, 422, `${mode} jokes are rejected by the analysis`);
+    assert.doesNotMatch(await rejected.text(), /claude/i);
+  }
+  for (const mode of ["error", "malformed", "truncated", "invalid"] as const) {
+    claudeMode = mode;
+    const failed = await analyze({ body: joke, locale: "en" }, valid);
+    assert.equal(failed.status, 502, `${mode} analysis fails`);
+    const failedText = await failed.text();
+    assert.ok(!failedText.includes(apiKey));
+    assert.doesNotMatch(failedText, /claude/i);
+  }
+  claudeMode = "ok";
+  claudeSource = "zh";
+  claudeAdult = true;
+  submitted = fridgeJoke;
+  expectedLanguage = "Chinese";
+  const analyzed = await analyze({ body: `  ${fridgeJoke}  `, locale: "zh" }, valid);
+  assert.equal(analyzed.status, 200);
+  assert.equal(analyzed.headers.get("cache-control"), "private, no-store");
+  assert.deepEqual(await analyzed.json(), { sourceLanguage: "zh", adult: true, punchline: "We hear a pun." }, "Adult jokes are analyzed, not rejected");
+  expectedLanguage = "Spanish";
+  assert.equal((await analyze({ body: fridgeJoke, locale: "es" }, valid)).status, 200);
+  assert.equal(claudeRequests, 9, "Each analysis makes exactly one request");
+  assert.equal(jokes.length, storedBeforeAnalysis, "Analysis stores nothing");
+
+  // Step two: the confirmed explanation is adapted as the authoritative reading and stored with the 18+ flag.
+  const explainer = await cookie(false, true, "explainer@example.com");
+  for (const explanation of [42, "abc", "   abc   ", "x".repeat(501)]) {
+    assert.equal((await share({ body: fridgeJoke, explanation }, explainer)).status, 400);
+  }
+  const fridgeExplanation = "“上来自己冻” sounds like “上来自己动”, an innuendo.";
+  expectedExplanation = fridgeExplanation;
+  claudeAccepts = false;
+  const unrelated = await share({ body: fridgeJoke, explanation: `  ${fridgeExplanation}  ` }, explainer);
+  assert.equal(unrelated.status, 422, "An explanation that does not match the joke is rejected");
+  assert.equal(jokes.length, storedBeforeAnalysis);
+  claudeAccepts = true;
+  const explained = await share({ body: fridgeJoke, explanation: `  ${fridgeExplanation}  ` }, explainer);
+  assert.equal(explained.status, 201);
+  const explainedJoke = await explained.json() as Joke;
+  assert.deepEqual([explainedJoke.adult, explainedJoke.explanation, explainedJoke.explained_by, explainedJoke.source_language], [true, fridgeExplanation, "Joke", "zh"]);
+  expectedExplanation = null;
+  claudeAdult = false;
+  const plain = await share({ body: fridgeJoke, explanation: "   " }, explainer);
+  assert.equal(plain.status, 201, "A blank explanation is treated as none");
+  const plainJoke = await plain.json() as Joke;
+  assert.deepEqual([plainJoke.adult, plainJoke.explanation, plainJoke.explained_by], [false, null, null]);
+  assert.equal(claudeRequests, 12);
+
+  // Community explanations: authentication, CSRF, and validation run before any request.
+  assert.equal(explanationsRoute.maxDuration, 120);
+  claudeRequests = 0;
+  const explanation = "The scarecrow is literally out standing in a field.";
+  for (const session of ["", "better-auth.session_data=forged", await cookie(true)]) {
+    assert.equal((await explain({ jokeId: 1, explanation }, session)).status, 401);
+  }
+  for (const requestOrigin of ["https://evil.example", ""]) assert.equal((await explain({ jokeId: 1, explanation }, valid, requestOrigin)).status, 403);
+  assert.equal((await explain({ jokeId: 1, explanation }, unverified)).status, 403);
+  for (const body of [null, {}, { jokeId: 1 }, { jokeId: "1", explanation }, { jokeId: 0, explanation }, { jokeId: 1.5, explanation }, { jokeId: 1, explanation: 42 }, { jokeId: 1, explanation: "abc" }, { jokeId: 1, explanation: "x".repeat(501) }]) {
+    assert.equal((await explain(body, valid)).status, 400);
+  }
+  delete process.env.ANTHROPIC_API_KEY;
+  assert.equal((await explain({ jokeId: 1, explanation }, valid)).status, 503);
+  process.env.ANTHROPIC_API_KEY = apiKey;
+  for (let i = 0; i < 10; i++) {
+    explanations.push({ joke_id: 1, user_id: limitedId, author_name: "Limited", explanation, accepted: i % 2 === 0, created_at: hoursAgo(i + 1) });
+  }
+  assert.equal((await explain({ jokeId: 1, explanation }, await cookie(false, true, "limited@example.com"))).status, 429, "Accepted and rejected explanations count toward the daily limit");
+  assert.equal((await explain({ jokeId: 999_999, explanation }, valid)).status, 404);
+  assert.equal(claudeRequests, 0);
+
+  // A rejected explanation is recorded but leaves the joke, its versions, and its ratings unchanged.
+  claudeSource = "en";
+  submitted = jokes.find((item) => item.id === 1)!.body;
+  expectedExplanation = explanation;
+  const demoVersions = adaptations.filter((row) => row.joke_id === 1).map((row) => row.id);
+  claudeAccepts = false;
+  const rejectedExplanation = await explain({ jokeId: 1, explanation: `  ${explanation}  ` }, valid);
+  assert.equal(rejectedExplanation.status, 422);
+  assert.doesNotMatch(await rejectedExplanation.text(), /claude/i);
+  assert.deepEqual(explanations.filter((row) => row.user_id === userId).map((row) => [row.joke_id, row.author_name, row.explanation, row.accepted]), [[1, "Joke", explanation, false]]);
+  claudeAccepts = true;
+  for (const [mode, status] of [["unsuitable", 422], ["refusal", 422], ["partial", 502], ["error", 502], ["malformed", 502]] as const) {
+    claudeMode = mode;
+    assert.equal((await explain({ jokeId: 1, explanation }, valid)).status, status, `${mode} re-adaptation`);
+  }
+  assert.equal(explanations.filter((row) => row.user_id === userId).length, 1, "Only a rejected explanation records a row before success");
+  const unchanged = jokes.find((item) => item.id === 1)!;
+  assert.deepEqual([unchanged.explanation, unchanged.explained_by, unchanged.adult], [null, null, false]);
+  assert.deepEqual(adaptations.filter((row) => row.joke_id === 1).map((row) => row.id), demoVersions);
+  assert.equal(ratings.filter((row) => row.adaptation_id === 2).length, 1);
+
+  // An accepted explanation replaces all three versions, resets their ratings, and is credited on the card.
+  claudeMode = "ok";
+  claudeAdult = true;
+  rememberedPhotos.clear();
+  const readapted = await explain({ jokeId: 1, explanation: `  ${explanation}  ` }, stranger);
+  assert.equal(readapted.status, 200);
+  assert.equal(readapted.headers.get("cache-control"), "private, no-store");
+  const readaptedText = await readapted.text();
+  assert.ok(!readaptedText.includes(apiKey));
+  const readaptedJoke = JSON.parse(readaptedText) as Joke;
+  assert.equal(readaptedJoke.id, 1);
+  assert.equal(readaptedJoke.body, submitted, "The original joke text never changes");
+  assert.deepEqual([readaptedJoke.explanation, readaptedJoke.explained_by, readaptedJoke.adult], [explanation, "Joke", true]);
+  assert.deepEqual(readaptedJoke.adaptations.map((adaptation) => adaptation.audience), ["en", "es", "zh"]);
+  assert.deepEqual(readaptedJoke.adaptations.map((adaptation) => adaptation.body), ["en version", "es version", "zh version"]);
+  assert.ok(readaptedJoke.adaptations.every((adaptation) => !demoVersions.includes(adaptation.id)), "Every version is replaced");
+  assert.equal(readaptedJoke.revealed, false, "The stranger's earlier rating was reset with the old versions");
+  assert.ok(!hasCounts(readaptedJoke));
+  assert.equal(ratings.filter((row) => demoVersions.includes(row.adaptation_id)).length, 0);
+  assert.deepEqual(explanations.filter((row) => row.user_id === digest("other@example.com")).map((row) => [row.joke_id, row.accepted]), [[1, true]]);
+  assert.equal(rememberedPhotos.get(digest("other@example.com")), googlePhoto);
+  assert.deepEqual((await list()).find((item) => item.id === 1)!.explanation, explanation);
+  assert.equal(claudeRequests, 7);
+  expectedExplanation = null;
+  claudeAdult = false;
+
   // Unknown versions and missing configuration.
   assert.equal((await rate({ adaptationId: 999_999, funny: true }, valid)).status, 404);
   assert.equal((await withdraw({ adaptationId: 999_999 }, valid)).status, 404);
@@ -331,8 +546,9 @@ try {
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   assert.equal((await share({ body: joke }, valid)).status, 503);
   assert.equal((await rate({ adaptationId: 1, funny: true }, valid)).status, 503);
+  assert.equal((await explain({ jokeId: 1, explanation }, valid)).status, 503);
   assert.equal((await jokesRoute.GET(new Request(`${origin}/api/jokes`))).status, 503);
-  console.log("PASS: Joke feed with origins and localized commentary, blind totals, one Claude request per joke, source language detection, partially invalid and failed adaptation, unsuitable and unsupported-language jokes, daily limit, ratings and withdrawal, guest/expired/tampered/unverified sessions, CSRF, invalid input, unknown versions, and missing configuration.");
+  console.log("PASS: Joke feed with origins and localized commentary, blind totals, one Claude request per joke, source language detection, partially invalid and failed adaptation, unsuitable and unsupported-language jokes, daily limit, ratings and withdrawal, punchline analysis in the reader's language, sharing with an explanation, adult jokes flagged 18+, community explanations (rejected, limited, unknown, and accepted re-adaptation with reset ratings), guest/expired/tampered/unverified sessions, CSRF, invalid input, unknown versions, and missing configuration.");
 } finally {
   globalThis.fetch = originalFetch;
 }

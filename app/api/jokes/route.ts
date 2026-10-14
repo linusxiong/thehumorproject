@@ -1,7 +1,7 @@
 import { auth, stableUserId } from "@/lib/auth";
 import { adaptJoke, isClaudeConfigured, type AdaptationResult } from "@/lib/claude";
 import { loadJokes } from "@/lib/joke-feed";
-import { dailyJokeLimit, jokeLength } from "@/lib/jokes";
+import { dailyJokeLimit, explanationLength, jokeLength } from "@/lib/jokes";
 import { createServerSupabase, rememberGoogleAvatar } from "@/lib/supabase-server";
 
 // One adaptation request may take up to 100 seconds, plus database round trips.
@@ -35,6 +35,12 @@ export async function POST(request: Request) {
     if (body.length < jokeLength.min || body.length > jokeLength.max) {
       return fail(`Write a joke between ${jokeLength.min} and ${jokeLength.max} characters.`, 400);
     }
+    // The author's confirmed or corrected reading of the joke, from the analysis step; optional.
+    const explanation = typeof input.explanation === "string" ? input.explanation.trim() : "";
+    if ((input.explanation != null && typeof input.explanation !== "string")
+      || (explanation && (explanation.length < explanationLength.min || explanation.length > explanationLength.max))) {
+      return fail(`Explain the joke in ${explanationLength.min} to ${explanationLength.max} characters.`, 400);
+    }
     const client = createServerSupabase();
     if (!client || !isClaudeConfigured()) return fail("Joke adaptation is not configured yet.", 503);
 
@@ -46,18 +52,20 @@ export async function POST(request: Request) {
 
     let result: AdaptationResult;
     try {
-      result = await adaptJoke(body, request.signal);
+      result = await adaptJoke(body, { signal: request.signal, explanation: explanation || undefined });
     } catch (error) {
       console.error("Joke adaptation failed:", error instanceof Error ? error.message : error);
       return fail("The joke could not be adapted right now. Please try again.", 502);
     }
     if (!result.suitable) {
-      return fail("Please share a joke in English, Spanish, or Chinese that is not hateful, harassing, or sexually explicit.", 422);
+      return fail("Please share a self-contained joke in English, Spanish, or Chinese that is not hateful or harassing.", 422);
     }
+    if (!result.explanationAccepted) return fail("Your explanation does not seem to match this joke. Please edit it and try again.", 422);
 
     const authorName = session.user.name?.trim().split(/\s+/)[0]?.slice(0, 100) || "Member";
     const { data: jokeId, error } = await client.rpc("create_joke", {
       p_author_id: userId, p_author_name: authorName, p_body: body, p_source_language: result.sourceLanguage, p_adaptations: result.adaptations,
+      p_adult: result.adult, p_explanation: explanation || null, p_explained_by: explanation ? authorName : null,
     }).abortSignal(AbortSignal.timeout(15_000));
     if (error) throw error;
     await rememberGoogleAvatar(client, userId, session.user.image);
