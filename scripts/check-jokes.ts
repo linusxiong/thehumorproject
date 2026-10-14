@@ -32,23 +32,23 @@ const uploadedPhotos = new Map<string, string>();
 
 type Row = {
   id: number; body: string; source_language: string; origin: string; source_label: string | null; author_id: string | null; author_name: string; created_at: string;
-  adult: boolean; explanation: string | null; explained_by: string | null;
+  adult: boolean; explanation: string | null; explanation_source: "author" | "community" | null;
 };
 type Localized = Record<string, string>;
 type AdaptationRow = { id: number; joke_id: number; audience: string; body: string; gloss: Localized; punchline_core: Localized; notes: Localized };
 const jokes: Row[] = [{
   id: 1, body: "Why did the scarecrow win an award? He was outstanding in his field.", source_language: "en", origin: "demo", source_label: null,
-  author_id: null, author_name: "Demo", created_at: "2026-10-01T00:00:00.000Z", adult: false, explanation: null, explained_by: null,
+  author_id: null, author_name: "Demo", created_at: "2026-10-01T00:00:00.000Z", adult: false, explanation: null, explanation_source: null,
 }];
 const adaptations: AdaptationRow[] = ["en", "es", "zh"].map((audience, index) => ({
   id: index + 1, joke_id: 1, audience, body: `Demo ${audience}`, gloss: { en: `Demo ${audience} gloss` }, punchline_core: { en: "Pun on outstanding." }, notes: { en: "Demo notes." },
 }));
 const ratings: { adaptation_id: number; user_id: string; funny: boolean }[] = [{ adaptation_id: 2, user_id: digest("other@example.com"), funny: true }];
 // joke_explanations stand-in: every explanation a member supplied for an existing joke, accepted or rejected.
-const explanations: { joke_id: number; user_id: string; author_name: string; explanation: string; accepted: boolean; created_at: string }[] = [];
+const explanations: { joke_id: number; user_id: string; explanation: string; accepted: boolean; created_at: string }[] = [];
 const hoursAgo = (hours: number) => new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 const member = (id: number, body: string, authorId: string, authorName: string, createdAt: string): Row =>
-  ({ id, body, source_language: "en", origin: "member", source_label: null, author_id: authorId, author_name: authorName, created_at: createdAt, adult: false, explanation: null, explained_by: null });
+  ({ id, body, source_language: "en", origin: "member", source_label: null, author_id: authorId, author_name: authorName, created_at: createdAt, adult: false, explanation: null, explanation_source: null });
 for (let i = 0; i < 10; i++) jokes.push(member(100 + i, "Limited joke body", limitedId, "Limited", hoursAgo(i + 1)));
 jokes.push(member(200, "Old joke body text", userId, "Joke", hoursAgo(30)));
 for (let i = 0; i < 9; i++) jokes.push(member(300 + i, "Older joke body", userId, "Joke", hoursAgo(25 + i)));
@@ -75,7 +75,7 @@ function feed(viewer: string | null, jokeId: number | null, limit: number) {
     .sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id).slice(0, limit)
     .map((joke) => ({
       id: joke.id, body: joke.body, source_language: joke.source_language, origin: joke.origin, source_label: joke.source_label,
-      author_name: joke.author_name, created_at: joke.created_at, adult: joke.adult, explanation: joke.explanation, explained_by: joke.explained_by,
+      author_name: joke.author_name, created_at: joke.created_at, adult: joke.adult, explanation: joke.explanation, explanation_source: joke.explanation_source,
       author_avatar_path: joke.author_id && uploadedPhotos.has(joke.author_id) ? uploadedPhotos.get(joke.author_id) : null,
       author_google_url: joke.author_id ? rememberedPhotos.get(joke.author_id) ?? null : null,
       adaptations: adaptations.filter((row) => row.joke_id === joke.id).sort((a, b) => order.indexOf(a.audience) - order.indexOf(b.audience))
@@ -164,23 +164,24 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
       return Response.json(feed(body.p_user_id, body.p_joke_id, body.p_limit));
     case "/rest/v1/rpc/create_joke": {
       assert.deepEqual(Object.keys(body).sort(), [
-        "p_adaptations", "p_adult", "p_author_id", "p_author_name", "p_body", "p_explained_by", "p_explanation", "p_source_language",
+        "p_adaptations", "p_adult", "p_author_id", "p_author_name", "p_body", "p_explanation", "p_source_language",
       ]);
       const id = nextJokeId++;
       jokes.push({
         ...member(id, body.p_body, body.p_author_id, body.p_author_name, new Date().toISOString()),
-        source_language: body.p_source_language, adult: body.p_adult, explanation: body.p_explanation, explained_by: body.p_explained_by,
+        source_language: body.p_source_language, adult: body.p_adult, explanation: body.p_explanation,
+        explanation_source: body.p_explanation === null ? null : "author",
       });
       for (const row of body.p_adaptations) adaptations.push({ ...row, id: nextAdaptationId++, joke_id: id });
       return Response.json(id);
     }
     case "/rest/v1/rpc/readapt_joke": {
-      assert.deepEqual(Object.keys(body).sort(), ["p_adaptations", "p_adult", "p_author_name", "p_explanation", "p_joke_id", "p_user_id"]);
+      assert.deepEqual(Object.keys(body).sort(), ["p_adaptations", "p_adult", "p_explanation", "p_joke_id", "p_user_id"]);
       const target = jokes.find((item) => item.id === body.p_joke_id);
       if (!target) return Response.json({ code: "P0002", message: "joke does not exist" }, { status: 404 });
-      Object.assign(target, { adult: body.p_adult, explanation: body.p_explanation, explained_by: body.p_author_name });
+      Object.assign(target, { adult: body.p_adult, explanation: body.p_explanation, explanation_source: "community" });
       explanations.push({
-        joke_id: target.id, user_id: body.p_user_id, author_name: body.p_author_name, explanation: body.p_explanation, accepted: true, created_at: new Date().toISOString(),
+        joke_id: target.id, user_id: body.p_user_id, explanation: body.p_explanation, accepted: true, created_at: new Date().toISOString(),
       });
       // Deleting the old versions cascades to their ratings.
       const removed = new Set(adaptations.filter((row) => row.joke_id === target.id).map((row) => row.id));
@@ -201,7 +202,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     }
     case "/rest/v1/joke_explanations": {
       if (init?.method === "POST") {
-        assert.deepEqual(Object.keys(body).sort(), ["accepted", "author_name", "explanation", "joke_id", "user_id"]);
+        assert.deepEqual(Object.keys(body).sort(), ["accepted", "explanation", "joke_id", "user_id"], "Explanations never store the member's name");
         explanations.push({ ...body, created_at: new Date().toISOString() });
         return new Response(null, { status: 201 });
       }
@@ -461,13 +462,13 @@ try {
   const explained = await share({ body: fridgeJoke, explanation: `  ${fridgeExplanation}  ` }, explainer);
   assert.equal(explained.status, 201);
   const explainedJoke = await explained.json() as Joke;
-  assert.deepEqual([explainedJoke.adult, explainedJoke.explanation, explainedJoke.explained_by, explainedJoke.source_language], [true, fridgeExplanation, "Joke", "zh"]);
+  assert.deepEqual([explainedJoke.adult, explainedJoke.explanation, explainedJoke.explanation_source, explainedJoke.source_language], [true, fridgeExplanation, "author", "zh"]);
   expectedExplanation = null;
   claudeAdult = false;
   const plain = await share({ body: fridgeJoke, explanation: "   " }, explainer);
   assert.equal(plain.status, 201, "A blank explanation is treated as none");
   const plainJoke = await plain.json() as Joke;
-  assert.deepEqual([plainJoke.adult, plainJoke.explanation, plainJoke.explained_by], [false, null, null]);
+  assert.deepEqual([plainJoke.adult, plainJoke.explanation, plainJoke.explanation_source], [false, null, null]);
   assert.equal(claudeRequests, 12);
 
   // Community explanations: authentication, CSRF, and validation run before any request.
@@ -486,7 +487,7 @@ try {
   assert.equal((await explain({ jokeId: 1, explanation }, valid)).status, 503);
   process.env.ANTHROPIC_API_KEY = apiKey;
   for (let i = 0; i < 10; i++) {
-    explanations.push({ joke_id: 1, user_id: limitedId, author_name: "Limited", explanation, accepted: i % 2 === 0, created_at: hoursAgo(i + 1) });
+    explanations.push({ joke_id: 1, user_id: limitedId, explanation, accepted: i % 2 === 0, created_at: hoursAgo(i + 1) });
   }
   assert.equal((await explain({ jokeId: 1, explanation }, await cookie(false, true, "limited@example.com"))).status, 429, "Accepted and rejected explanations count toward the daily limit");
   assert.equal((await explain({ jokeId: 999_999, explanation }, valid)).status, 404);
@@ -501,7 +502,7 @@ try {
   const rejectedExplanation = await explain({ jokeId: 1, explanation: `  ${explanation}  ` }, valid);
   assert.equal(rejectedExplanation.status, 422);
   assert.doesNotMatch(await rejectedExplanation.text(), /claude/i);
-  assert.deepEqual(explanations.filter((row) => row.user_id === userId).map((row) => [row.joke_id, row.author_name, row.explanation, row.accepted]), [[1, "Joke", explanation, false]]);
+  assert.deepEqual(explanations.filter((row) => row.user_id === userId).map((row) => [row.joke_id, row.explanation, row.accepted]), [[1, explanation, false]]);
   claudeAccepts = true;
   for (const [mode, status] of [["unsuitable", 422], ["refusal", 422], ["partial", 502], ["error", 502], ["malformed", 502]] as const) {
     claudeMode = mode;
@@ -509,7 +510,7 @@ try {
   }
   assert.equal(explanations.filter((row) => row.user_id === userId).length, 1, "Only a rejected explanation records a row before success");
   const unchanged = jokes.find((item) => item.id === 1)!;
-  assert.deepEqual([unchanged.explanation, unchanged.explained_by, unchanged.adult], [null, null, false]);
+  assert.deepEqual([unchanged.explanation, unchanged.explanation_source, unchanged.adult], [null, null, false]);
   assert.deepEqual(adaptations.filter((row) => row.joke_id === 1).map((row) => row.id), demoVersions);
   assert.equal(ratings.filter((row) => row.adaptation_id === 2).length, 1);
 
@@ -525,7 +526,8 @@ try {
   const readaptedJoke = JSON.parse(readaptedText) as Joke;
   assert.equal(readaptedJoke.id, 1);
   assert.equal(readaptedJoke.body, submitted, "The original joke text never changes");
-  assert.deepEqual([readaptedJoke.explanation, readaptedJoke.explained_by, readaptedJoke.adult], [explanation, "Joke", true]);
+  assert.deepEqual([readaptedJoke.explanation, readaptedJoke.explanation_source, readaptedJoke.adult], [explanation, "community", true]);
+  assert.ok(!JSON.stringify(readaptedJoke).includes("Joke Check"), "A community explanation never reveals who wrote it");
   assert.deepEqual(readaptedJoke.adaptations.map((adaptation) => adaptation.audience), ["en", "es", "zh"]);
   assert.deepEqual(readaptedJoke.adaptations.map((adaptation) => adaptation.body), ["en version", "es version", "zh version"]);
   assert.ok(readaptedJoke.adaptations.every((adaptation) => !demoVersions.includes(adaptation.id)), "Every version is replaced");

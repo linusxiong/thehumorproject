@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     const authorName = session.user.name?.trim().split(/\s+/)[0]?.slice(0, 100) || "Member";
     const { data: jokeId, error } = await client.rpc("create_joke", {
       p_author_id: userId, p_author_name: authorName, p_body: body, p_source_language: result.sourceLanguage, p_adaptations: result.adaptations,
-      p_adult: result.adult, p_explanation: explanation || null, p_explained_by: explanation ? authorName : null,
+      p_adult: result.adult, p_explanation: explanation || null,
     }).abortSignal(AbortSignal.timeout(15_000));
     if (error) throw error;
     await rememberGoogleAvatar(client, userId, session.user.image);

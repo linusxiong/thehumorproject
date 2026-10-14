@@ -45,7 +45,7 @@ const en = {
     ] },
     { id: "explanations", title: "Community explanations", paragraphs: [
       "Any signed-in member can explain what a joke really means, for example a hidden pun, homophone, or innuendo the versions missed. The same content rules apply.",
-      "Explanations are public and credited with your first name. When we accept an explanation, all versions of that joke are regenerated from it and their ratings are reset. We may reject explanations that do not fit the joke.",
+      "Explanations are public and shown as added by a community member (or, for your own joke, as the author's explanation), never with your name. When we accept an explanation, all versions of that joke are regenerated from it and their ratings are reset. We may reject explanations that do not fit the joke.",
       `By submitting an explanation you give us the same license as for the jokes you share. Each account can submit up to ${dailyExplanationLimit} explanations in 24 hours.`,
     ] },
     { id: "ratings", title: "Ratings", paragraphs: [
@@ -96,7 +96,7 @@ const messages: Messages<typeof en> = {
       ] },
       { id: "explanations", title: "Explicaciones de la comunidad", paragraphs: [
         "Cualquier miembro con sesión iniciada puede explicar qué significa realmente un chiste, por ejemplo un juego de palabras oculto, un homófono o un doble sentido que las versiones no captaron. Se aplican las mismas normas de contenido.",
-        "Las explicaciones son públicas y se firman con tu nombre de pila. Cuando aceptamos una explicación, todas las versiones de ese chiste se regeneran a partir de ella y sus votos se reinician. Podemos rechazar explicaciones que no encajen con el chiste.",
+        "Las explicaciones son públicas y se muestran como aporte de un miembro de la comunidad (o, en tu propio chiste, como explicación del autor), nunca con tu nombre. Cuando aceptamos una explicación, todas las versiones de ese chiste se regeneran a partir de ella y sus votos se reinician. Podemos rechazar explicaciones que no encajen con el chiste.",
         `Al enviar una explicación nos concedes la misma licencia que para los chistes que compartes. Cada cuenta puede enviar hasta ${dailyExplanationLimit} explicaciones cada 24 horas.`,
       ] },
       { id: "ratings", title: "Calificaciones", paragraphs: [
@@ -144,7 +144,7 @@ const messages: Messages<typeof en> = {
       ] },
       { id: "explanations", title: "社区笑点说明", paragraphs: [
         "任何已登录的成员都可以说明一个笑话的真正含义，例如各版本没有理解的隐藏双关、谐音或暗示。同样适用上述内容规则。",
-        "笑点说明是公开的，并以你的名字署名。说明一经采用，该笑话的所有版本都会据此重新生成，其评分也会被清零。与笑话不符的说明可能会被拒绝。",
+        "笑点说明是公开的，会显示为“社区用户补充”（在你自己分享的笑话上显示为“作者说明”），不会显示你的名字。说明一经采用，该笑话的所有版本都会据此重新生成，其评分也会被清零。与笑话不符的说明可能会被拒绝。",
         `提交说明即表示你授予我们与分享笑话相同的许可。每个账号 24 小时内最多可提交 ${dailyExplanationLimit} 条说明。`,
       ] },
       { id: "ratings", title: "评分", paragraphs: [

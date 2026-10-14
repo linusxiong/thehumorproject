@@ -58,9 +58,9 @@ export type Joke = {
   created_at: string;
   // Sexual or otherwise adult humor, shown with an 18+ label.
   adult: boolean;
-  // The accepted explanation of what makes the joke funny, and who wrote it (the author or a community member).
+  // The accepted explanation of what makes the joke funny, and whether the author or a community member gave it (never who).
   explanation: string | null;
-  explained_by: string | null;
+  explanation_source: "author" | "community" | null;
   // True once the signed-in viewer has rated any version of this joke; totals stay hidden until then.
   revealed: boolean;
   adaptations: Adaptation[];

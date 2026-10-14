@@ -6,7 +6,8 @@ import { createServerSupabase, rememberGoogleAvatar } from "@/lib/supabase-serve
 
 // Any member may explain what an existing joke really means when its versions missed the point.
 // The joke is re-adapted with that explanation; an accepted one replaces all versions (resetting their ratings)
-// and is credited on the card. One adaptation request may take up to 100 seconds, plus database round trips.
+// and is shown on the card as coming from a community member, never with a name.
+// One adaptation request may take up to 100 seconds, plus database round trips.
 export const maxDuration = 120;
 
 const noStore = { "Cache-Control": "private, no-store" };
@@ -52,10 +53,9 @@ export async function POST(request: Request) {
     }
     if (!result.suitable) return fail("This joke cannot be adapted with that explanation.", 422);
 
-    const authorName = session.user.name?.trim().split(/\s+/)[0]?.slice(0, 100) || "Member";
     if (!result.explanationAccepted) {
       const { error } = await client.from("joke_explanations")
-        .insert({ joke_id: jokeId, user_id: userId, author_name: authorName, explanation, accepted: false })
+        .insert({ joke_id: jokeId, user_id: userId, explanation, accepted: false })
         .abortSignal(AbortSignal.timeout(15_000));
       if (error?.code === "23503") return fail("This joke no longer exists.", 404);
       if (error) throw error;
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
     }
 
     const { error } = await client.rpc("readapt_joke", {
-      p_joke_id: jokeId, p_user_id: userId, p_author_name: authorName, p_explanation: explanation,
+      p_joke_id: jokeId, p_user_id: userId, p_explanation: explanation,
       p_adult: result.adult, p_adaptations: result.adaptations,
     }).abortSignal(AbortSignal.timeout(15_000));
     // no_data_found: the joke was deleted while it was being adapted.

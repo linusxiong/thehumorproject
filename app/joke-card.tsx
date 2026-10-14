@@ -39,10 +39,10 @@ const en = {
   adult: "18+",
   adultLabel: "Adult humor, labeled 18+",
   explanationTitle: "Why it’s funny",
-  explainedBy: (name: string) => `explained by ${name}`,
+  explanationSource: { author: "From the author", community: "Added by a community member" },
   suggest: "Suggest the real meaning",
   suggestTitle: "What does this joke really mean?",
-  suggestIntro: "If the versions missed the joke, explain what actually makes it funny. We check that your explanation fits the joke, then regenerate all three versions from it. Their ratings are reset, and your explanation is shown on the joke with your first name.",
+  suggestIntro: "If the versions missed the joke, explain what actually makes it funny. We check that your explanation fits the joke, then regenerate all three versions from it. Their ratings are reset, and your explanation is shown on the joke as added by a community member, without your name.",
   suggestLabel: "The real meaning",
   suggestPlaceholder: "Point out any hidden pun, homophone, double meaning, or innuendo, and what the punchline really says.",
   suggestCount: (length: number) => `${length} / ${explanationLength.max} characters · at least ${explanationLength.min}`,
@@ -90,10 +90,10 @@ const messages: Messages<typeof en> = {
     adult: "18+",
     adultLabel: "Humor para adultos, marcado como 18+",
     explanationTitle: "Por qué tiene gracia",
-    explainedBy: (name) => `explicado por ${name}`,
+    explanationSource: { author: "Del autor", community: "Aportado por un miembro de la comunidad" },
     suggest: "Sugerir el significado real",
     suggestTitle: "¿Qué significa realmente este chiste?",
-    suggestIntro: "Si las versiones no captaron el chiste, explica qué lo hace gracioso de verdad. Comprobamos que tu explicación encaje con el chiste y volvemos a generar las tres versiones a partir de ella. Sus votos se reinician, y tu explicación aparece en el chiste con tu nombre de pila.",
+    suggestIntro: "Si las versiones no captaron el chiste, explica qué lo hace gracioso de verdad. Comprobamos que tu explicación encaje con el chiste y volvemos a generar las tres versiones a partir de ella. Sus votos se reinician, y tu explicación aparece en el chiste como aporte de un miembro de la comunidad, sin tu nombre.",
     suggestLabel: "El significado real",
     suggestPlaceholder: "Señala cualquier juego de palabras oculto, homófono, doble sentido o insinuación, y qué dice realmente el remate.",
     suggestCount: (length) => `${length} / ${explanationLength.max} caracteres · mínimo ${explanationLength.min}`,
@@ -137,10 +137,10 @@ const messages: Messages<typeof en> = {
     adult: "18+",
     adultLabel: "成人幽默，标记为 18+",
     explanationTitle: "笑点说明",
-    explainedBy: (name) => `${name} 补充`,
+    explanationSource: { author: "作者说明", community: "社区用户补充" },
     suggest: "补充真实笑点",
     suggestTitle: "这个笑话真正的笑点是什么？",
-    suggestIntro: "如果各版本没有理解这个笑话，请说明它真正好笑在哪里。我们会核对你的说明是否符合这个笑话，再据此重新生成三个版本。这些版本的评分会被清零，你的说明会以你的名字显示在笑话上。",
+    suggestIntro: "如果各版本没有理解这个笑话，请说明它真正好笑在哪里。我们会核对你的说明是否符合这个笑话，再据此重新生成三个版本。这些版本的评分会被清零，你的说明会以“社区用户补充”的形式显示在笑话上，不会显示你的名字。",
     suggestLabel: "真实笑点",
     suggestPlaceholder: "指出其中隐藏的双关、谐音、一语双关或暗示，以及笑点真正想说的是什么。",
     suggestCount: (length) => `${length} / ${explanationLength.max} 个字符 · 至少 ${explanationLength.min} 个`,
@@ -276,7 +276,7 @@ export function JokeCard({ joke, signedIn, onChange }: {
           <Surface variant="secondary" className="flex flex-col gap-1 rounded-2xl p-4">
             <Typography.Paragraph size="sm" weight="semibold">{t.explanationTitle}</Typography.Paragraph>
             <Typography.Paragraph size="sm" className="whitespace-pre-line">{joke.explanation}</Typography.Paragraph>
-            {joke.explained_by && <Typography.Paragraph size="xs" color="muted">{t.explainedBy(joke.explained_by)}</Typography.Paragraph>}
+            {joke.explanation_source && <Typography.Paragraph size="xs" color="muted">{t.explanationSource[joke.explanation_source]}</Typography.Paragraph>}
           </Surface>
         )}
         <Tabs selectedKey={tab} onSelectionChange={(key) => setTab(String(key))}>
