@@ -31,7 +31,7 @@ const en = {
   signIn: "Sign in to rate this version.",
   withdrawHint: "Select your rating again to withdraw it.",
   saveFailed: "Your rating could not be saved. Please try again.",
-  compareIntro: "Does the same punchline land in every culture? Compare the comic core of each version.",
+  compareIntro: "Does the same punchline land in every culture? Read each culture's version side by side, with its comic core underneath.",
   samePunchline: "Same punchline?",
   meter: (total: number) => `Still funny · ${total} ${total === 1 ? "rating" : "ratings"}`,
   noRatings: "No ratings yet.",
@@ -61,7 +61,7 @@ const messages: Messages<typeof en> = {
     signIn: "Inicia sesión para calificar esta versión.",
     withdrawHint: "Vuelve a seleccionar tu voto para retirarlo.",
     saveFailed: "No se pudo guardar tu voto. Inténtalo de nuevo.",
-    compareIntro: "¿El mismo remate funciona en todas las culturas? Compara el núcleo cómico de cada versión.",
+    compareIntro: "¿El mismo remate funciona en todas las culturas? Lee la versión de cada cultura lado a lado, con su núcleo cómico debajo.",
     samePunchline: "¿El mismo remate?",
     meter: (total) => `Sigue siendo gracioso · ${total} ${total === 1 ? "voto" : "votos"}`,
     noRatings: "Todavía no hay votos.",
@@ -87,7 +87,7 @@ const messages: Messages<typeof en> = {
     signIn: "登录后即可为此版本评分。",
     withdrawHint: "再次点击你的评分即可撤回。",
     saveFailed: "评分未能保存，请重试。",
-    compareIntro: "同一个笑点在每种文化里都能成立吗？比较各版本的核心笑点。",
+    compareIntro: "同一个笑点在每种文化里都能成立吗？并排阅读各文化改编后的版本，下方附有核心笑点。",
     samePunchline: "笑点一致吗？",
     meter: (total) => `还好笑 · ${total} 个评分`,
     noRatings: "暂无评分。",
@@ -360,7 +360,12 @@ function Compare({ joke, versions }: { joke: Joke; versions: { audience: Audienc
                   <div>
                     <Chip size="sm" variant="soft" color={cultureColors[audience.id]}>{audienceNames[locale][audience.id]}</Chip>
                   </div>
-                  <Typography.Paragraph size="sm" weight="medium">{localized(adaptation.punchline_core, locale)}</Typography.Paragraph>
+                  {/* Each column shows that culture's own version; the core punchline, in the reader's language, lines them up. */}
+                  <Typography.Paragraph weight="medium" lang={audience.lang}>{adaptation.body}</Typography.Paragraph>
+                  <div className="flex flex-col gap-1">
+                    <Typography.Paragraph size="xs" color="muted" weight="semibold">{t.core}</Typography.Paragraph>
+                    <Typography.Paragraph size="xs" color="muted">{localized(adaptation.punchline_core, locale)}</Typography.Paragraph>
+                  </div>
                   {joke.revealed && (total > 0 ? (
                     <Meter value={Math.round((funny / total) * 100)} size="sm" color={cultureColors[audience.id]} className="w-full">
                       <Label>{t.meter(total)}</Label>
