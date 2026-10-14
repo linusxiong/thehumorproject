@@ -21,7 +21,7 @@ const en = {
   ratingsHint: "Rate a joke to reveal its totals.",
   stepsTitle: "How it works",
   steps: [
-    { title: "Share it in your language", body: "Post a one-liner, a pun, or a short story joke in English, Spanish, or Chinese. Sign in with Google to submit." },
+    { title: "Share it in your language", body: "Post a one-liner, a pun, or a short story joke in English, Spanish, or Chinese. We show what we think makes it funny so you can confirm or correct it. Sign in with Google to submit." },
     { title: "We adapt it for the other two cultures", body: "Your wording stays as the original; the other versions keep the same core punchline but borrow local wordplay, names, and situations." },
     { title: "Readers vote if it still lands", body: "Rate each version “Still funny” or “Not funny”. Totals stay hidden until you vote." },
   ],
@@ -44,7 +44,7 @@ const messages: Messages<typeof en> = {
     ratingsHint: "Califica un chiste para ver sus resultados.",
     stepsTitle: "Cómo funciona",
     steps: [
-      { title: "Compártelo en tu idioma", body: "Publica un chiste corto, un juego de palabras o una pequeña historia en inglés, español o chino. Inicia sesión con Google para enviarlo." },
+      { title: "Compártelo en tu idioma", body: "Publica un chiste corto, un juego de palabras o una pequeña historia en inglés, español o chino. Te mostramos qué creemos que lo hace gracioso para que lo confirmes o lo corrijas. Inicia sesión con Google para enviarlo." },
       { title: "Nosotros lo adaptamos a las otras dos culturas", body: "Tu texto se queda como original; las otras versiones mantienen el mismo remate, pero usan juegos de palabras, nombres y situaciones locales." },
       { title: "Los lectores votan si sigue funcionando", body: "Califica cada versión como “Sigue siendo gracioso” o “No tiene gracia”. Los resultados se muestran después de votar." },
     ],
@@ -64,7 +64,7 @@ const messages: Messages<typeof en> = {
     ratingsHint: "给笑话评分后即可查看统计。",
     stepsTitle: "玩法说明",
     steps: [
-      { title: "用你的语言分享", body: "用英文、西班牙文或中文发布一句俏皮话、一个双关语或一个小故事。使用 Google 登录后即可提交。" },
+      { title: "用你的语言分享", body: "用英文、西班牙文或中文发布一句俏皮话、一个双关语或一个小故事。我们会先说出理解的笑点，由你确认或修改。使用 Google 登录后即可提交。" },
       { title: "我们为另外两种文化改编", body: "你的原文保持不变；其他版本保留相同的核心笑点，但换成当地的文字游戏、人名和生活场景。" },
       { title: "读者投票：还好笑吗？", body: "为每个版本选择“还好笑”或“不好笑”。投票之后才会显示统计结果。" },
     ],

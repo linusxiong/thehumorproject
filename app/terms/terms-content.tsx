@@ -1,7 +1,7 @@
 "use client";
 
 import { Card, Chip, Link, Separator, Typography } from "@heroui/react";
-import { dailyJokeLimit } from "@/lib/jokes";
+import { dailyExplanationLimit, dailyJokeLimit } from "@/lib/jokes";
 import { htmlLang, localizedBrandName, useLocale, type Messages } from "../locale";
 
 const datasetUrl = "https://huggingface.co/datasets/qiushibaike-bak/metadata";
@@ -37,11 +37,16 @@ const en = {
     ] },
     { id: "content", title: "Your jokes", paragraphs: [
       "You keep ownership of what you share. By sharing a joke, you give us a worldwide, non-exclusive, royalty-free license to store, display, translate, adapt, and distribute it and its versions as part of the service.",
-      "Only share jokes you wrote or have the right to share. Do not share hateful, harassing, sexually explicit, or unlawful content, or personal information about others. We may decline, edit labels on, or remove any content.",
+      "Only share jokes you wrote or have the right to share. Adult humor, including sexual jokes and innuendo, is allowed; we label it 18+. Do not share hateful or harassing content, any sexual content involving minors, unlawful content, or personal information about others. We may decline, edit labels on, or remove any content.",
       `Each account can share up to ${dailyJokeLimit} jokes in 24 hours.`,
     ] },
     { id: "adaptations", title: "Automatic adaptations", paragraphs: [
       "Versions, translations, punchline summaries, and notes are generated automatically. They can be inaccurate, miss a joke, or read differently from the original. They are not reviewed by the original author and should not be taken as the author's own words.",
+    ] },
+    { id: "explanations", title: "Community explanations", paragraphs: [
+      "Any signed-in member can explain what a joke really means, for example a hidden pun, homophone, or innuendo the versions missed. The same content rules apply.",
+      "Explanations are public and credited with your first name. When we accept an explanation, all versions of that joke are regenerated from it and their ratings are reset. We may reject explanations that do not fit the joke.",
+      `By submitting an explanation you give us the same license as for the jokes you share. Each account can submit up to ${dailyExplanationLimit} explanations in 24 hours.`,
     ] },
     { id: "ratings", title: "Ratings", paragraphs: [
       "Each account has one rating per version, which it can change or withdraw. Totals stay hidden until you have rated a version of that joke so they cannot bias your vote. Do not manipulate ratings with multiple accounts or automation.",
@@ -83,11 +88,16 @@ const messages: Messages<typeof en> = {
       ] },
       { id: "content", title: "Tus chistes", paragraphs: [
         "Lo que compartes sigue siendo tuyo. Al compartir un chiste nos concedes una licencia mundial, no exclusiva y gratuita para almacenarlo, mostrarlo, traducirlo, adaptarlo y distribuirlo, junto con sus versiones, como parte del servicio.",
-        "Comparte solo chistes que hayas escrito o que tengas derecho a compartir. No publiques contenido de odio, acoso, sexualmente explícito o ilegal, ni datos personales de otras personas. Podemos rechazar, reetiquetar o retirar cualquier contenido.",
+        "Comparte solo chistes que hayas escrito o que tengas derecho a compartir. Se permite el humor para adultos, incluidos los chistes sexuales y los dobles sentidos; lo marcamos como 18+. No publiques contenido de odio o acoso, ningún contenido sexual que involucre a menores, contenido ilegal ni datos personales de otras personas. Podemos rechazar, reetiquetar o retirar cualquier contenido.",
         `Cada cuenta puede compartir hasta ${dailyJokeLimit} chistes cada 24 horas.`,
       ] },
       { id: "adaptations", title: "Adaptaciones automáticas", paragraphs: [
         "Las versiones, traducciones, resúmenes del remate y notas se generan automáticamente. Pueden ser inexactos, perder el chiste o sonar distinto del original. El autor original no los revisa y no deben tomarse como palabras suyas.",
+      ] },
+      { id: "explanations", title: "Explicaciones de la comunidad", paragraphs: [
+        "Cualquier miembro con sesión iniciada puede explicar qué significa realmente un chiste, por ejemplo un juego de palabras oculto, un homófono o un doble sentido que las versiones no captaron. Se aplican las mismas normas de contenido.",
+        "Las explicaciones son públicas y se firman con tu nombre de pila. Cuando aceptamos una explicación, todas las versiones de ese chiste se regeneran a partir de ella y sus votos se reinician. Podemos rechazar explicaciones que no encajen con el chiste.",
+        `Al enviar una explicación nos concedes la misma licencia que para los chistes que compartes. Cada cuenta puede enviar hasta ${dailyExplanationLimit} explicaciones cada 24 horas.`,
       ] },
       { id: "ratings", title: "Calificaciones", paragraphs: [
         "Cada cuenta tiene una calificación por versión, que puede cambiar o retirar. Los totales permanecen ocultos hasta que calificas una versión de ese chiste, para que no influyan en tu voto. No manipules las calificaciones con varias cuentas ni de forma automatizada.",
@@ -126,11 +136,16 @@ const messages: Messages<typeof en> = {
       ] },
       { id: "content", title: "你的笑话", paragraphs: [
         "你分享的内容仍归你所有。分享笑话即表示你授予我们全球范围、非独占、免版税的许可，以便在本服务中存储、展示、翻译、改编和传播该笑话及其各个版本。",
-        "请只分享你自己创作或有权分享的笑话。不要发布仇恨、骚扰、色情露骨或违法的内容，也不要发布他人的个人信息。我们可以拒绝、调整标签或删除任何内容。",
+        "请只分享你自己创作或有权分享的笑话。允许成人幽默（包括带性暗示的笑话和荤段子），我们会将其标记为 18+。不要发布仇恨或骚扰内容、任何涉及未成年人的性内容、违法内容，也不要发布他人的个人信息。我们可以拒绝、调整标签或删除任何内容。",
         `每个账号 24 小时内最多可分享 ${dailyJokeLimit} 条笑话。`,
       ] },
       { id: "adaptations", title: "自动改编", paragraphs: [
-        "各版本、译文、笑点说明和改编说明均为自动生成，可能不准确、丢失笑点，或读起来与原文不同。它们未经原作者审阅，不应被视为原作者本人的表述。",
+        "各版本、译文、核心笑点和改编说明均为自动生成，可能不准确、丢失笑点，或读起来与原文不同。它们未经原作者审阅，不应被视为原作者本人的表述。",
+      ] },
+      { id: "explanations", title: "社区笑点说明", paragraphs: [
+        "任何已登录的成员都可以说明一个笑话的真正含义，例如各版本没有理解的隐藏双关、谐音或暗示。同样适用上述内容规则。",
+        "笑点说明是公开的，并以你的名字署名。说明一经采用，该笑话的所有版本都会据此重新生成，其评分也会被清零。与笑话不符的说明可能会被拒绝。",
+        `提交说明即表示你授予我们与分享笑话相同的许可。每个账号 24 小时内最多可提交 ${dailyExplanationLimit} 条说明。`,
       ] },
       { id: "ratings", title: "评分", paragraphs: [
         "每个账号对每个版本只有一次评分，可以修改或撤回。在你给该笑话的某个版本评分之前，统计结果会保持隐藏，以免影响你的判断。请勿使用多个账号或自动化手段操纵评分。",

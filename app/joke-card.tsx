@@ -1,8 +1,8 @@
 "use client";
 
-import { Avatar, Button, Card, Chip, Disclosure, Label, Link, Meter, Separator, Tabs, ToggleButton, Tooltip, Typography, toast } from "@heroui/react";
-import { useId, useRef, useState } from "react";
-import { audiences, localized, type Adaptation, type AudienceId, type Joke } from "@/lib/jokes";
+import { Alert, Avatar, Button, Card, Chip, Description, Disclosure, FieldError, Form, Label, Link, Meter, Modal, Separator, Spinner, Surface, Tabs, TextArea, TextField, ToggleButton, Tooltip, Typography, toast } from "@heroui/react";
+import { useId, useRef, useState, type FormEvent } from "react";
+import { audiences, dailyExplanationLimit, explanationLength, localized, type Adaptation, type AudienceId, type Joke } from "@/lib/jokes";
 import { ApiError, apiErrorMessage, errorStatus } from "./api-errors";
 import { cultureColors, sourceName } from "./cultures";
 import { audienceCultures, audienceNames, htmlLang, useLocale, type Locale, type Messages } from "./locale";
@@ -36,6 +36,27 @@ const en = {
   meter: (total: number) => `Still funny · ${total} ${total === 1 ? "rating" : "ratings"}`,
   noRatings: "No ratings yet.",
   hidden: "Rate any version to see how it traveled.",
+  adult: "18+",
+  adultLabel: "Adult humor, labeled 18+",
+  explanationTitle: "Why it’s funny",
+  explainedBy: (name: string) => `explained by ${name}`,
+  suggest: "Suggest the real meaning",
+  suggestTitle: "What does this joke really mean?",
+  suggestIntro: "If the versions missed the joke, explain what actually makes it funny. We check that your explanation fits the joke, then regenerate all three versions from it. Their ratings are reset, and your explanation is shown on the joke with your first name.",
+  suggestLabel: "The real meaning",
+  suggestPlaceholder: "Point out any hidden pun, homophone, double meaning, or innuendo, and what the punchline really says.",
+  suggestCount: (length: number) => `${length} / ${explanationLength.max} characters · at least ${explanationLength.min}`,
+  suggestTooShort: `Write at least ${explanationLength.min} characters.`,
+  suggestTooLong: `Keep it under ${explanationLength.max} characters.`,
+  suggestSubmit: "Regenerate versions",
+  suggestPending: "Regenerating versions…",
+  cancel: "Cancel",
+  close: "Close",
+  suggestSuccess: "Thanks! The versions now follow your explanation.",
+  suggestFailedTitle: "Explanation not applied",
+  suggestRejected: "We couldn’t match that explanation to the joke. Make sure it explains this joke’s punchline.",
+  suggestLimit: `You’ve reached today’s limit of ${dailyExplanationLimit} explanations. Come back in 24 hours.`,
+  suggestFailed: "We couldn’t regenerate the versions right now. Please try again.",
 };
 
 const messages: Messages<typeof en> = {
@@ -66,6 +87,27 @@ const messages: Messages<typeof en> = {
     meter: (total) => `Sigue siendo gracioso · ${total} ${total === 1 ? "voto" : "votos"}`,
     noRatings: "Todavía no hay votos.",
     hidden: "Califica cualquier versión para ver cómo viajó.",
+    adult: "18+",
+    adultLabel: "Humor para adultos, marcado como 18+",
+    explanationTitle: "Por qué tiene gracia",
+    explainedBy: (name) => `explicado por ${name}`,
+    suggest: "Sugerir el significado real",
+    suggestTitle: "¿Qué significa realmente este chiste?",
+    suggestIntro: "Si las versiones no captaron el chiste, explica qué lo hace gracioso de verdad. Comprobamos que tu explicación encaje con el chiste y volvemos a generar las tres versiones a partir de ella. Sus votos se reinician, y tu explicación aparece en el chiste con tu nombre de pila.",
+    suggestLabel: "El significado real",
+    suggestPlaceholder: "Señala cualquier juego de palabras oculto, homófono, doble sentido o insinuación, y qué dice realmente el remate.",
+    suggestCount: (length) => `${length} / ${explanationLength.max} caracteres · mínimo ${explanationLength.min}`,
+    suggestTooShort: `Escribe al menos ${explanationLength.min} caracteres.`,
+    suggestTooLong: `Usa menos de ${explanationLength.max} caracteres.`,
+    suggestSubmit: "Regenerar versiones",
+    suggestPending: "Regenerando versiones…",
+    cancel: "Cancelar",
+    close: "Cerrar",
+    suggestSuccess: "¡Gracias! Las versiones ya siguen tu explicación.",
+    suggestFailedTitle: "No se aplicó la explicación",
+    suggestRejected: "No pudimos relacionar esa explicación con el chiste. Asegúrate de que explique el remate de este chiste.",
+    suggestLimit: `Llegaste al límite de ${dailyExplanationLimit} explicaciones por día. Vuelve en 24 horas.`,
+    suggestFailed: "No pudimos regenerar las versiones en este momento. Inténtalo de nuevo.",
   },
   zh: {
     original: "原文",
@@ -92,6 +134,27 @@ const messages: Messages<typeof en> = {
     meter: (total) => `还好笑 · ${total} 个评分`,
     noRatings: "暂无评分。",
     hidden: "给任意版本评分，即可查看它的旅行成绩。",
+    adult: "18+",
+    adultLabel: "成人幽默，标记为 18+",
+    explanationTitle: "笑点说明",
+    explainedBy: (name) => `${name} 补充`,
+    suggest: "补充真实笑点",
+    suggestTitle: "这个笑话真正的笑点是什么？",
+    suggestIntro: "如果各版本没有理解这个笑话，请说明它真正好笑在哪里。我们会核对你的说明是否符合这个笑话，再据此重新生成三个版本。这些版本的评分会被清零，你的说明会以你的名字显示在笑话上。",
+    suggestLabel: "真实笑点",
+    suggestPlaceholder: "指出其中隐藏的双关、谐音、一语双关或暗示，以及笑点真正想说的是什么。",
+    suggestCount: (length) => `${length} / ${explanationLength.max} 个字符 · 至少 ${explanationLength.min} 个`,
+    suggestTooShort: `请至少输入 ${explanationLength.min} 个字符。`,
+    suggestTooLong: `请控制在 ${explanationLength.max} 个字符以内。`,
+    suggestSubmit: "重新生成版本",
+    suggestPending: "正在重新生成版本…",
+    cancel: "取消",
+    close: "关闭",
+    suggestSuccess: "谢谢！各版本已按照你的说明重新改编。",
+    suggestFailedTitle: "说明未被采用",
+    suggestRejected: "我们无法将这段说明与这个笑话对应起来。请确认它解释的是这个笑话的笑点。",
+    suggestLimit: `你今天已达到 ${dailyExplanationLimit} 条说明的上限，请 24 小时后再来。`,
+    suggestFailed: "我们暂时无法重新生成版本，请重试。",
   },
 };
 
@@ -203,11 +266,19 @@ export function JokeCard({ joke, signedIn, onChange }: {
                 <Chip size="sm" variant="soft">{sourceName(joke.source_label, locale)}</Chip>
               </Link>
             )}
+            {joke.adult && <Chip size="sm" variant="soft" color="danger" title={t.adultLabel}>{t.adult}</Chip>}
           </div>
         </div>
         <Card.Title id={titleId} lang={htmlLang[joke.source_language]} className="text-lg sm:text-xl">{joke.body}</Card.Title>
       </Card.Header>
       <Card.Content className="gap-4">
+        {joke.explanation && (
+          <Surface variant="secondary" className="flex flex-col gap-1 rounded-2xl p-4">
+            <Typography.Paragraph size="sm" weight="semibold">{t.explanationTitle}</Typography.Paragraph>
+            <Typography.Paragraph size="sm" className="whitespace-pre-line">{joke.explanation}</Typography.Paragraph>
+            {joke.explained_by && <Typography.Paragraph size="xs" color="muted">{t.explainedBy(joke.explained_by)}</Typography.Paragraph>}
+          </Surface>
+        )}
         <Tabs selectedKey={tab} onSelectionChange={(key) => setTab(String(key))}>
           <Tabs.ListContainer>
             <Tabs.List aria-label={t.versions}>
@@ -239,7 +310,116 @@ export function JokeCard({ joke, signedIn, onChange }: {
           </Typography.Paragraph>
         ))}
       </Card.Content>
+      {signedIn && (
+        <Card.Footer>
+          <SuggestMeaning joke={joke} onChange={onChange} />
+        </Card.Footer>
+      )}
     </Card>
+  );
+}
+
+function SuggestMeaning({ joke, onChange }: { joke: Joke; onChange: (joke: Joke) => void }) {
+  const locale = useLocale();
+  const t = messages[locale];
+  const [open, setOpen] = useState(false);
+  const [explanation, setExplanation] = useState("");
+  const [pending, setPending] = useState(false);
+  // Keep the status, not the text, so the message follows language switches.
+  const [failure, setFailure] = useState<{ status: number | null } | null>(null);
+
+  function openChange(next: boolean) {
+    if (pending) return;
+    if (next) {
+      setExplanation("");
+      setFailure(null);
+    }
+    setOpen(next);
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pending) return;
+    setPending(true);
+    setFailure(null);
+    try {
+      const response = await fetch("/api/joke-explanations", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jokeId: joke.id, explanation: explanation.trim() }),
+      });
+      if (response.status !== 200) throw new ApiError(response.status);
+      onChange(await response.json() as Joke);
+      setOpen(false);
+      toast.success(t.suggestSuccess);
+    } catch (reason) {
+      setFailure({ status: errorStatus(reason) });
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function failureMessage(status: number | null) {
+    if (status === 422) return t.suggestRejected;
+    if (status === 429) return t.suggestLimit;
+    if (status === 502) return t.suggestFailed;
+    return apiErrorMessage(locale, status, t.suggestFailed);
+  }
+
+  const length = explanation.trim().length;
+
+  return (
+    <Modal isOpen={open} onOpenChange={openChange}>
+      <Button size="sm" variant="tertiary">{t.suggest}</Button>
+      <Modal.Backdrop isDismissable={!pending} isKeyboardDismissDisabled={pending}>
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.CloseTrigger isDisabled={pending} aria-label={t.close} />
+            <Modal.Header>
+              <Modal.Heading>{t.suggestTitle}</Modal.Heading>
+            </Modal.Header>
+            <Form className="flex flex-col gap-4" onSubmit={submit}>
+              <Modal.Body className="flex flex-col gap-4">
+                <Typography.Paragraph size="sm" color="muted">{t.suggestIntro}</Typography.Paragraph>
+                <Typography.Paragraph lang={htmlLang[joke.source_language]} className="whitespace-pre-line">{joke.body}</Typography.Paragraph>
+                <TextField name="explanation" isRequired value={explanation} onChange={setExplanation} maxLength={explanationLength.max}
+                  isDisabled={pending}
+                  validate={(value) => {
+                    const trimmed = value.trim().length;
+                    if (trimmed < explanationLength.min) return t.suggestTooShort;
+                    if (trimmed > explanationLength.max) return t.suggestTooLong;
+                    return null;
+                  }}>
+                  <Label>{t.suggestLabel}</Label>
+                  <TextArea rows={4} placeholder={t.suggestPlaceholder} />
+                  <Description>{t.suggestCount(length)}</Description>
+                  <FieldError />
+                </TextField>
+                {failure && (
+                  <Alert status="danger">
+                    <Alert.Indicator />
+                    <Alert.Content>
+                      <Alert.Title>{t.suggestFailedTitle}</Alert.Title>
+                      <Alert.Description>{failureMessage(failure.status)}</Alert.Description>
+                    </Alert.Content>
+                  </Alert>
+                )}
+              </Modal.Body>
+              <Modal.Footer>
+                <Button variant="tertiary" isDisabled={pending} onPress={() => openChange(false)}>{t.cancel}</Button>
+                <Button type="submit" isPending={pending}>
+                  {({ isPending }) => (
+                    <>
+                      {isPending && <Spinner size="sm" color="current" />}
+                      {isPending ? t.suggestPending : t.suggestSubmit}
+                    </>
+                  )}
+                </Button>
+              </Modal.Footer>
+            </Form>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </Modal>
   );
 }
 
