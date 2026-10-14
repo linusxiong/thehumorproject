@@ -41,10 +41,22 @@ export type Joke = {
   // Where an imported joke came from, e.g. "Qiushibaike"; null otherwise.
   source_label: string | null;
   author_name: string;
+  // The member's chosen avatar (uploaded photo or Google photo); null for imported and demo jokes or when unknown.
+  author_avatar_url: string | null;
   created_at: string;
   // True once the signed-in viewer has rated any version of this joke; totals stay hidden until then.
   revealed: boolean;
   adaptations: Adaptation[];
+};
+
+// One rating the signed-in account has given, as shown in the personal center.
+export type MyRating = {
+  adaptation_id: number;
+  funny: boolean;
+  rated_at: string;
+  audience: AudienceId;
+  version: string;
+  joke: Pick<Joke, "id" | "body" | "source_language" | "origin" | "source_label" | "author_name">;
 };
 
 // Older rows carry English-only commentary; fall back to English, then any language.

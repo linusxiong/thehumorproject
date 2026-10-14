@@ -2,7 +2,7 @@ import { auth, stableUserId } from "@/lib/auth";
 import { adaptJoke, isClaudeConfigured, type AdaptationResult } from "@/lib/claude";
 import { loadJokes } from "@/lib/joke-feed";
 import { dailyJokeLimit, jokeLength } from "@/lib/jokes";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { createServerSupabase, rememberGoogleAvatar } from "@/lib/supabase-server";
 
 // One adaptation request may take up to 100 seconds, plus database round trips.
 export const maxDuration = 120;
@@ -60,6 +60,7 @@ export async function POST(request: Request) {
       p_author_id: userId, p_author_name: authorName, p_body: body, p_source_language: result.sourceLanguage, p_adaptations: result.adaptations,
     }).abortSignal(AbortSignal.timeout(15_000));
     if (error) throw error;
+    await rememberGoogleAvatar(client, userId, session.user.image);
     const [joke] = await loadJokes(client, userId, Number(jokeId));
     if (!joke) throw new Error("The new joke could not be loaded.");
     return Response.json(joke, { status: 201, headers: noStore });

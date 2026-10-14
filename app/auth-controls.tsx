@@ -16,8 +16,8 @@ const en = {
   continueWithGoogle: "Continue with Google",
   accountMenuFor: (name: string) => `Account menu for ${name}`,
   account: "Account",
-  membersArea: "Members area",
-  changePhoto: "Change your profile photo",
+  personalCenter: "Personal center",
+  personalCenterHint: "Your ratings and profile photo",
   signOut: "Sign out",
 };
 
@@ -30,8 +30,8 @@ const messages: Messages<typeof en> = {
     continueWithGoogle: "Continuar con Google",
     accountMenuFor: (name) => `Menú de la cuenta de ${name}`,
     account: "Cuenta",
-    membersArea: "Área de miembros",
-    changePhoto: "Cambia tu foto de perfil",
+    personalCenter: "Centro personal",
+    personalCenterHint: "Tus calificaciones y foto de perfil",
     signOut: "Cerrar sesión",
   },
   zh: {
@@ -41,8 +41,8 @@ const messages: Messages<typeof en> = {
     continueWithGoogle: "使用 Google 继续",
     accountMenuFor: (name) => `${name} 的账户菜单`,
     account: "账户",
-    membersArea: "会员专区",
-    changePhoto: "更换头像",
+    personalCenter: "个人中心",
+    personalCenterHint: "我的评价与头像",
     signOut: "退出登录",
   },
 };
@@ -108,10 +108,10 @@ export function AuthControls() {
         <Dropdown.Menu aria-label={t.account} onAction={(key) => { if (key === "sign-out") signOut(); }}>
           <Dropdown.Section>
             <Header>{session.user.name}</Header>
-            <Dropdown.Item id="members" href="/members" textValue={t.membersArea}>
+            <Dropdown.Item id="members" href="/members" textValue={t.personalCenter}>
               <div className="flex flex-col">
-                <Label>{t.membersArea}</Label>
-                <Description>{t.changePhoto}</Description>
+                <Label>{t.personalCenter}</Label>
+                <Description>{t.personalCenterHint}</Description>
               </div>
             </Dropdown.Item>
           </Dropdown.Section>

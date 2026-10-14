@@ -6,6 +6,7 @@ import { audiences, localized, type Adaptation, type AudienceId, type Joke } fro
 import { ApiError, apiErrorMessage, errorStatus } from "./api-errors";
 import { cultureColors, sourceName } from "./cultures";
 import { audienceCultures, audienceNames, htmlLang, useLocale, type Locale, type Messages } from "./locale";
+import { LaughIcon, MehIcon } from "./rating-icons";
 
 type Audience = (typeof audiences)[number];
 
@@ -96,7 +97,7 @@ const messages: Messages<typeof en> = {
 
 const relativeUnits: [Intl.RelativeTimeFormatUnit, number][] = [["day", 86_400_000], ["hour", 3_600_000], ["minute", 60_000]];
 
-function postedAt(iso: string, locale: Locale) {
+export function postedAt(iso: string, locale: Locale) {
   const date = new Date(iso);
   const elapsed = date.getTime() - Date.now();
   if (Math.abs(elapsed) < 7 * 86_400_000) {
@@ -184,6 +185,7 @@ export function JokeCard({ joke, signedIn, onChange }: {
       <Card.Header className="gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <Avatar size="sm" variant="soft" color={avatarColor} aria-hidden="true">
+            {joke.author_avatar_url && <Avatar.Image src={joke.author_avatar_url} alt="" referrerPolicy="no-referrer" />}
             <Avatar.Fallback>{initials || "?"}</Avatar.Fallback>
           </Avatar>
           <Typography.Paragraph size="xs" color="muted">
@@ -256,6 +258,8 @@ function Version({ audience, adaptation, original, signedIn, pending, locked, on
   const promptId = useId();
   const prompt = audience.id === locale ? t.ownPrompt : t.otherPrompt(audience.id);
   const rating = adaptation.user_rating;
+  // Replays the icon animation each time the reader picks an answer (not for ratings loaded from the server).
+  const [burst, setBurst] = useState<{ funny: boolean; key: number } | null>(null);
   // A translation helps only when the version is in a language other than the reader's.
   const gloss = audience.id === locale ? "" : localized(adaptation.gloss, locale);
   const notes = localized(adaptation.notes, locale);
@@ -306,10 +310,25 @@ function Version({ audience, adaptation, original, signedIn, pending, locked, on
         <div className="flex items-center gap-2" role="group" aria-labelledby={promptId} aria-busy={pending}>
           {([true, false] as const).map((funny) => {
             const label = funny ? t.stillFunny : t.notFunny;
+            const Icon = funny ? LaughIcon : MehIcon;
+            const animating = burst?.funny === funny;
             return (
               <ToggleButton key={String(funny)} size="sm" isSelected={rating === funny} isDisabled={!signedIn || locked}
-                onChange={() => onRate(funny)} aria-label={rating === funny ? t.withdraw(label) : undefined}>
+                className={`relative overflow-visible ${funny ? "data-[selected=true]:bg-success-soft data-[selected=true]:text-success" : "data-[selected=true]:bg-danger-soft data-[selected=true]:text-danger"}`}
+                onChange={() => {
+                  if (rating !== funny) setBurst((current) => ({ funny, key: (current?.key ?? 0) + 1 }));
+                  onRate(funny);
+                }}
+                aria-label={rating === funny ? t.withdraw(label) : undefined}>
+                <span key={animating ? burst.key : "idle"} className={`inline-flex ${animating ? (funny ? "motion-safe:animate-laugh" : "motion-safe:animate-shrug") : ""}`}>
+                  <Icon />
+                </span>
                 {label}
+                {animating && funny && (
+                  <span key={`float-${burst.key}`} aria-hidden="true" className="pointer-events-none absolute -top-2 left-2 text-success motion-safe:animate-float-up motion-reduce:hidden">
+                    <LaughIcon />
+                  </span>
+                )}
               </ToggleButton>
             );
           })}

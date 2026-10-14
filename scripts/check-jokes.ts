@@ -23,6 +23,10 @@ const ratingsRoute = await import("../app/api/joke-ratings/route");
 const digest = (email: string) => createHash("sha256").update(email).digest("hex");
 const userId = digest("joke-check@example.com");
 const limitedId = digest("limited@example.com");
+const googlePhoto = "https://lh3.googleusercontent.com/a/joke-check";
+// user_profiles stand-ins: Google photos remembered by the routes, and uploaded photo paths.
+const rememberedPhotos = new Map<string, string>();
+const uploadedPhotos = new Map<string, string>();
 
 type Row = { id: number; body: string; source_language: string; origin: string; source_label: string | null; author_id: string | null; author_name: string; created_at: string };
 type Localized = Record<string, string>;
@@ -55,6 +59,8 @@ function feed(viewer: string | null, jokeId: number | null, limit: number) {
     .map((joke) => ({
       id: joke.id, body: joke.body, source_language: joke.source_language, origin: joke.origin, source_label: joke.source_label,
       author_name: joke.author_name, created_at: joke.created_at,
+      author_avatar_path: joke.author_id && uploadedPhotos.has(joke.author_id) ? uploadedPhotos.get(joke.author_id) : null,
+      author_google_url: joke.author_id ? rememberedPhotos.get(joke.author_id) ?? null : null,
       adaptations: adaptations.filter((row) => row.joke_id === joke.id).sort((a, b) => order.indexOf(a.audience) - order.indexOf(b.audience))
         .map((row) => {
           const rows = ratings.filter((rating) => rating.adaptation_id === row.id);
@@ -145,6 +151,12 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
       else ratings.push({ adaptation_id: body.adaptation_id, user_id: body.user_id, funny: body.funny });
       return new Response(null, { status: 201 });
     }
+    case "/rest/v1/user_profiles": {
+      assert.equal(init?.method, "POST");
+      assert.equal(url.searchParams.get("on_conflict"), "user_id");
+      rememberedPhotos.set(body.user_id, body.google_url);
+      return new Response(null, { status: 201 });
+    }
   }
   throw new Error(`Unexpected request: ${init?.method} ${url.pathname}`);
 }) as typeof fetch;
@@ -154,7 +166,7 @@ async function cookie(expired = false, emailVerified = true, email = "joke-check
   const now = new Date().toISOString();
   const encrypted = await symmetricEncodeJWT({
     session: { id: "joke-session", token, userId: "joke-user", expiresAt: new Date(Date.now() + (expired ? -60_000 : 300_000)).toISOString(), createdAt: now, updatedAt: now },
-    user: { id: "joke-user", name: "Joke Check", email, emailVerified, createdAt: now, updatedAt: now },
+    user: { id: "joke-user", name: "Joke Check", email, emailVerified, image: googlePhoto, createdAt: now, updatedAt: now },
     updatedAt: Date.now(), version: "1",
   }, secret, "better-auth-session", 300);
   return `better-auth.session_token=${encodeURIComponent(`${token}.${await makeSignature(token, secret)}`)}; better-auth.session_data=${encrypted}`;
@@ -272,6 +284,13 @@ try {
   assert.ok(!createdText.includes(apiKey));
   const fresh = JSON.parse(createdText) as Joke;
   assert.deepEqual(fresh.adaptations.map((adaptation) => adaptation.audience), ["en", "es", "zh"]);
+  assert.equal(fresh.author_avatar_url, googlePhoto, "A member's joke shows their Google photo");
+  assert.ok(!("author_google_url" in fresh) && !("author_avatar_path" in fresh), "Raw avatar fields never reach the browser");
+  uploadedPhotos.set(userId, "uploaded.png");
+  const withUpload = (await list()).find((item) => item.id === fresh.id)!;
+  assert.equal(withUpload.author_avatar_url, "https://jokes.example.test/storage/v1/object/public/avatars/uploaded.png", "An uploaded photo wins over the Google photo");
+  assert.equal((await list()).find((item) => item.id === 1)!.author_avatar_url, null, "Demo jokes have no author photo");
+  uploadedPhotos.delete(userId);
   assert.equal(fresh.source_language, "en");
   assert.deepEqual(fresh.adaptations.map((adaptation) => adaptation.gloss[adaptation.audience]), ["en version", "es version", "zh version"]);
   assert.equal(fresh.revealed, false);

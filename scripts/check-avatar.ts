@@ -19,6 +19,7 @@ const { GET, POST, PATCH, DELETE } = await import("../app/api/avatar/route");
 const userId = createHash("sha256").update("avatar-check@example.com").digest("hex");
 const googleUrl = "https://lh3.googleusercontent.com/a/avatar-check";
 const profiles = new Map<string, { avatar_source: string; avatar_path: string | null }>();
+const rememberedPhotos = new Map<string, string>();
 const objects = new Map<string, { type: string | null; bytes: Uint8Array }>();
 let rpcError = false;
 const originalFetch = globalThis.fetch;
@@ -45,8 +46,15 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     return Response.json(previous);
   }
   assert.equal(url.pathname, "/rest/v1/user_profiles");
-  const row = profiles.get(url.searchParams.get("user_id")!.slice(3));
-  if (method === "GET") return Response.json(row ? [row] : []);
+  if (method === "POST") {
+    assert.equal(url.searchParams.get("on_conflict"), "user_id");
+    const { user_id: owner, google_url: photo } = JSON.parse(String(init?.body));
+    rememberedPhotos.set(owner, photo);
+    return new Response(null, { status: 201 });
+  }
+  const owner = url.searchParams.get("user_id")!.slice(3);
+  const row = profiles.get(owner);
+  if (method === "GET") return Response.json(row ? [{ ...row, google_url: rememberedPhotos.get(owner) ?? null }] : []);
   assert.equal(method, "PATCH");
   assert.equal(url.searchParams.get("avatar_path"), "not.is.null");
   if (!row?.avatar_path) return Response.json([]);
@@ -103,6 +111,7 @@ try {
   const initial = await call("GET", valid);
   assert.equal(initial.headers.get("cache-control"), "private, no-store");
   assert.deepEqual(await initial.json(), google, "New members start with their Google photo");
+  assert.equal(rememberedPhotos.get(userId), googleUrl, "The Google photo is remembered so jokes can show it");
   assert.equal((await choose(valid, "upload")).status, 409, "The uploaded option needs a photo first");
   for (const source of ["", "gravatar", null, 1]) assert.equal((await choose(valid, source)).status, 400);
   assert.equal((await call("PATCH", valid, "{")).status, 400);

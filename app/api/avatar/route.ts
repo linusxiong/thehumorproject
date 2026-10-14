@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { auth, stableUserId } from "@/lib/auth";
-import { createServerSupabase } from "@/lib/supabase-server";
+import { avatarBucket as bucket, createServerSupabase, rememberGoogleAvatar } from "@/lib/supabase-server";
 
-const bucket = "avatars";
 const maxBytes = 2 * 1024 * 1024;
 const ascii = (bytes: Uint8Array, start: number, end: number) => String.fromCharCode(...bytes.subarray(start, end));
 // Trust the file's leading bytes, never the client-supplied name or type.
@@ -36,9 +35,11 @@ export async function GET(request: Request) {
     const { session, userId, client } = await avatarContext(request);
     if (!session) return fail("Please sign in to see your profile photo.", 401);
     if (!client || !userId) return Response.json(profile(client, session.user.image, "google", null), { headers: noStore });
-    const { data, error } = await client.from("user_profiles").select("avatar_source,avatar_path")
+    const { data, error } = await client.from("user_profiles").select("avatar_source,avatar_path,google_url")
       .eq("user_id", userId).abortSignal(AbortSignal.timeout(15_000)).maybeSingle();
     if (error) throw error;
+    // The header loads this on every visit, which keeps the photo shown on the member's jokes current.
+    if (session.user.image && data?.google_url !== session.user.image) await rememberGoogleAvatar(client, userId, session.user.image);
     return Response.json(profile(client, session.user.image, data?.avatar_source ?? "google", data?.avatar_path ?? null), { headers: noStore });
   } catch {
     return fail("Your profile photo could not be loaded. Please try again.", 500);
