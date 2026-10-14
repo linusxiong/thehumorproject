@@ -3,6 +3,7 @@
 import { Chip, Typography } from "@heroui/react";
 import { AvatarSettings } from "../avatar-settings";
 import { useLocale, type Messages } from "../locale";
+import { MyJokes } from "./my-jokes";
 import { MyRatings } from "./my-ratings";
 
 const en = {
@@ -34,6 +35,7 @@ export function MemberArea({ userId, name, email }: { userId: string; name: stri
         <Typography.Heading level={1}>{t.welcome(name)}</Typography.Heading>
         <Typography.Paragraph color="muted">{t.signedInAs(email)}</Typography.Paragraph>
       </div>
+      <MyJokes />
       <MyRatings />
       <AvatarSettings userId={userId} name={name} />
     </div>

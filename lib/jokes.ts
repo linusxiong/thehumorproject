@@ -59,6 +59,11 @@ export type MyRating = {
   joke: Pick<Joke, "id" | "body" | "source_language" | "origin" | "source_label" | "author_name">;
 };
 
+// A joke the signed-in account shared, with full totals per version for the author's analytics.
+export type MyJoke = Pick<Joke, "id" | "body" | "source_language" | "created_at"> & {
+  adaptations: { audience: AudienceId; body: string; funny: number; not_funny: number }[];
+};
+
 // Older rows carry English-only commentary; fall back to English, then any language.
 export const localized = (value: Partial<Localized>, locale: AudienceId) =>
   value[locale] ?? value.en ?? Object.values(value)[0] ?? "";
