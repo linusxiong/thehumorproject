@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Project conventions
 
-- Use English for all source code comments, UI text, sample data, documentation, and commit messages.
+- Use English for all source code comments, sample data, documentation, and commit messages. Write UI text in English first; Spanish and Chinese translations live next to it in per-component `Messages` objects (see `app/locale.ts`).
 - Format commit messages as `<type>(<scope>): <short description>`. A scope is required, with one space after the colon.
 - Choose the type that matches the change: `feat` (features), `fix` (bug fixes), `docs` (documentation), `refactor` (refactoring), `test` (tests), or `chore` (maintenance).
 - Use the affected module as the scope, such as `project`, `app`, `config`, or `supabase`.
