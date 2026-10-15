@@ -4,7 +4,7 @@ A cross-cultural joke lab built with Next.js App Router, HeroUI v3, Supabase, an
 
 Brand: jokes travel across borders and get stamped. The logo mark, app icon (`app/icon.png`), hero, and per-language spot illustrations in `public/brand/` were generated with the Codex CLI image generation feature.
 
-The interface is built from HeroUI components with only layout utilities on top; `app/globals.css` sets just the brand accent and fonts. Light and dark themes follow the operating system automatically: an inline script in `app/layout.tsx` sets `data-theme` on `<html>` before the first paint and updates it when the system setting changes. HeroUI components are imported only from Client Components, because the HeroUI package cannot be imported from Server Components in webpack builds.
+The interface is built from HeroUI components with only layout utilities on top; `app/globals.css` sets just the brand accent, fonts, and the admin chart colors. Light and dark themes follow the operating system automatically: an inline script in `app/layout.tsx` sets `data-theme` on `<html>` before the first paint and updates it when the system setting changes. HeroUI components are imported only from Client Components, because the HeroUI package cannot be imported from Server Components in webpack builds.
 
 ## Jokes across cultures
 
@@ -51,7 +51,7 @@ ANTHROPIC_API_KEY=your-anthropic-api-key
 
 `NEXT_PUBLIC_SUPABASE_URL` is also accepted for the URL, and the legacy `SUPABASE_SERVICE_ROLE_KEY` for the secret key. All of these are server-only: never prefix the keys with `NEXT_PUBLIC_`. `bun run check:avatar:live` additionally reads `SUPABASE_PUBLISHABLE_KEY` to confirm that browser keys are denied. Vercel environment settings do not automatically populate `.env.local`; restart the local server after changing it.
 
-For a new database, run `supabase/seed.sql` once in the Supabase SQL Editor, then apply `supabase/migrations` in order (`supabase db push` for a project linked with the Supabase CLI). The seed and the `2026092800*` migrations create the original humor collection and caption votes tables; they stay only because the migration history builds on them, and `202610150002_drop_legacy_humor.sql` drops those tables and the `caption_vote_summary` function again. `202610140001_cross_cultural_jokes.sql` creates the jokes tables and the four demo jokes; `202610150001_multilingual_jokes.sql` adds source languages, origins, and localized commentary; `202610150003_author_avatars.sql` adds `user_profiles.google_url`, the author avatar fields in `joke_feed`, and the `my_ratings` function; `202610150004_my_jokes.sql` adds the `my_jokes` function; `202610160001_explanations_and_adult.sql` adds `jokes.adult` and `jokes.explanation`, the `joke_explanations` table, the matching `joke_feed` fields, the `p_adult` and `p_explanation` parameters of `create_joke`, and the `readapt_joke` function; `202610160002_anonymous_explanations.sql` replaces the explainer's name with `jokes.explanation_source` (`author` or `community`). After all migrations the public schema holds `jokes`, `joke_adaptations`, `adaptation_ratings`, `joke_explanations`, and `user_profiles`.
+For a new database, run `supabase/seed.sql` once in the Supabase SQL Editor, then apply `supabase/migrations` in order (`supabase db push` for a project linked with the Supabase CLI). The seed and the `2026092800*` migrations create the original humor collection and caption votes tables; they stay only because the migration history builds on them, and `202610150002_drop_legacy_humor.sql` drops those tables and the `caption_vote_summary` function again. `202610140001_cross_cultural_jokes.sql` creates the jokes tables and the four demo jokes; `202610150001_multilingual_jokes.sql` adds source languages, origins, and localized commentary; `202610150003_author_avatars.sql` adds `user_profiles.google_url`, the author avatar fields in `joke_feed`, and the `my_ratings` function; `202610150004_my_jokes.sql` adds the `my_jokes` function; `202610160001_explanations_and_adult.sql` adds `jokes.adult` and `jokes.explanation`, the `joke_explanations` table, the matching `joke_feed` fields, the `p_adult` and `p_explanation` parameters of `create_joke`, and the `readapt_joke` function; `202610160002_anonymous_explanations.sql` replaces the explainer's name with `jokes.explanation_source` (`author` or `community`); `202610170001_admin_area.sql` adds `user_profiles.is_superadmin` and the account details the admin area lists, `joke_adaptations.updated_at` with the column grant for superadmin edits, and the `admin_dashboard`, `admin_users`, `admin_media`, and `admin_ratings` functions. After all migrations the public schema holds `jokes`, `joke_adaptations`, `adaptation_ratings`, `joke_explanations`, and `user_profiles`.
 
 ```sh
 bun dev
@@ -61,7 +61,7 @@ Open http://localhost:3000.
 
 ## Google sign-in
 
-Authentication uses the open-source [Better Auth](https://better-auth.com/docs/integrations/next) package. It is the only additional direct dependency. Reading jokes is public; sharing and rating require a session, which every Route Handler verifies on the server. `/members` validates the encrypted session on the server before rendering member content. The header shows Google sign-in for visitors. For members it shows only their avatar, which opens a menu with their name, a link to the members area, and sign-out.
+Authentication uses the open-source [Better Auth](https://better-auth.com/docs/integrations/next) package, the only authentication dependency. Reading jokes is public; sharing and rating require a session, which every Route Handler verifies on the server. `/members` validates the encrypted session on the server before rendering member content. The header shows Google sign-in for visitors. For members it shows only their avatar, which opens a menu with their name, a link to the members area, and sign-out.
 
 Add these server-only variables to `.env.local` and to your Vercel deployment environment:
 
@@ -107,6 +107,8 @@ bun run check:avatar
 bun run build
 ```
 
+With `bun dev` running and the admin migration applied, `bun run check:admin` checks the admin area's authorization live (see [Admin area](#admin-area)).
+
 `bun run check:jokes` is an offline route integration check with real encrypted sessions and stub database and Claude services; it does not call Anthropic. It covers the feed with origins and localized commentary, blind totals, exactly one Claude request per analysis, submission, and explanation (model, JSON-schema output, effort, API key, and the joke and explanation tags), punchline analysis in the reader's language (statuses and response shape, nothing stored), sharing with an explanation and the 18+ flag, community explanations (unknown jokes, rejected explanations recorded without changing the joke, the daily limit, and accepted re-adaptation that replaces every version and resets its ratings), source language detection, partially invalid and failed adaptation (HTTP errors, malformed JSON, truncated output, no valid version), unsuitable, refused, and unsupported-language submissions, the daily limit, rating and withdrawal, guest/expired/tampered/unverified sessions, CSRF, invalid input, unknown versions, and missing configuration. Environments that restrict Turbopack's internal ports can validate with `bun run build --webpack`.
 
 ### Profile photos
@@ -119,11 +121,66 @@ The personal center starts with **Your jokes**: every joke the account shared, n
 
 Below it, **Your ratings** lists every version the account has rated, newest first, with the answer, the version's language and text, the original joke, and how many of the account's ratings were "still funny". `/api/my-ratings` returns them through the `my_ratings` function for the verified account only.
 
-The **Still funny** and **Not funny** buttons carry face icons (`app/rating-icons.tsx`) and turn green or red when chosen. Picking an answer plays a short animation: the laughing face bounces and a copy floats up, while the meh face shakes its head. The keyframes are the only additions to `app/globals.css`, and they are skipped when the reader prefers reduced motion.
+The **Still funny** and **Not funny** buttons carry face icons (`app/rating-icons.tsx`) and turn green or red when chosen. Picking an answer plays a short animation: the laughing face bounces and a copy floats up, while the meh face shakes its head. The keyframes are skipped when the reader prefers reduced motion.
 
 Before uploading, the browser crops the image to a centered square and resizes it to at most 512 × 512 pixels. `/api/avatar` then checks the request origin and Better Auth session, accepts files up to 2 MB, and identifies JPEG, PNG, or WebP from the file's leading bytes rather than its name or declared type. Photos are stored in the public `avatars` Supabase Storage bucket under random object names, so URLs reveal nothing about the member and the bucket cannot be listed. Preferences live in `user_profiles`, keyed by the same email digest as joke ratings; RLS is enabled with no policies, and table privileges allow only the server-only key. The `replace_avatar` function swaps or clears the photo atomically and returns the previous object for cleanup.
 
 Apply `supabase/migrations/202610120001_user_avatars.sql` with `supabase db push`; it creates the table, function, and bucket. The feature uses the same `SUPABASE_SECRET_KEY` as jokes. Run `bun run check:avatar` for an offline route integration check with real encrypted sessions and stub database and storage services. After applying the migration, with `bun dev` running and the server key configured, `bun run check:avatar:live` verifies the real HTTP, database, and storage flow with a synthetic local session: browser-key denial, bucket type limits, public photo URLs, replacement and concurrent-upload cleanup, source switching, and deletion. It then removes its test profile and photos.
+
+## Admin area
+
+`/admin` is a back office for superadmins, laid out after the [HeroUI Pro dashboard template](https://template-dashboard.heroui.pro/): a sidebar with the signed-in superadmin, navigation, a link back to the site, and sign-out (a drawer below the `lg` breakpoint), a sticky header with the language switcher, KPI tiles, chart cards, and data tables with search, filters, sorting, pagination, and row actions. It uses HeroUI v3 components and the template's icon set, [`@gravity-ui/icons`](https://github.com/gravity-ui/icons); the charts are small dependency-free SVG components in `app/admin/charts.tsx`. Every screen is translated like the rest of the site, and the account menu links to it for superadmins.
+
+### Access: a Google login wall plus `is_superadmin`
+
+Every admin route requires a Google session for an account whose `user_profiles.is_superadmin` is `true`. The check is layered:
+
+1. `proxy.ts` runs on `/admin`, `/admin/*`, and `/api/admin/*`, including routes added later. Without a session cookie it redirects pages to `/admin/login` and answers APIs with 401. It only reads the cookie.
+2. `lib/admin.ts` is the data access layer. The console layout, every admin page, and every admin Route Handler call it themselves (layouts do not re-run on client navigation): it verifies the encrypted Better Auth session, derives the verified-email digest exactly like the rest of the app, and reads `is_superadmin` from the database on every request. Revoking the flag takes effect on the next request, and database errors fail closed. Changes must also come from this site's origin.
+3. `/admin/login` is the only admin route without the flag check. It offers Google sign-in (returning to `/admin`) or, for a signed-in account without the flag, explains that access is granted on the server and offers to switch accounts.
+
+The tables keep RLS on with no policies, as before; only the server-only key can read them, through `admin_dashboard`, `admin_users`, `admin_media`, and `admin_ratings`, which are executable by `service_role` only.
+
+**Avoiding a lockout.** If only superadmins can enter, who makes the first one? Nothing in the app can set `is_superadmin`, so no request can escalate privileges. The flag is granted out of band with the server-only Supabase key, which bypasses RLS:
+
+```sh
+bun run admin:grant you@gmail.com
+```
+
+`scripts/grant-superadmin.ts` stores the flag on the profile keyed by the SHA-256 digest of the email, so the account needs no earlier visit; sign in at `/admin` with that Google account afterwards. `--revoke <email>` removes the flag and `--list` lists superadmins. The Supabase SQL Editor works too:
+
+```sql
+insert into public.user_profiles (user_id, email, is_superadmin)
+values (encode(sha256(convert_to(lower(trim('you@gmail.com')), 'UTF8')), 'hex'), lower(trim('you@gmail.com')), true)
+on conflict (user_id) do update set is_superadmin = true;
+```
+
+### Dashboard
+
+A date range (7 days, 30 days, 90 days, or 12 months, in the URL as `?range=`) scopes the activity numbers; everything else covers the whole collection.
+
+- **KPI tiles**: jokes shared, AI versions generated, ratings, and active accounts in the range, each with the change against the previous period of the same length, the all-time total, and a sparkline.
+- **Activity**: jokes or ratings per day (per week for 12 months), with the period total, average, and busiest day. Hovering, or focusing the chart and using the arrow keys, shows each value.
+- **Does the punchline survive?**: the share of "Still funny" answers per culture.
+- **What makes it funny**: the comic devices (twist, deadpan, literal reading, absurd exaggeration, wordplay and homophones, irony, self-mockery, innuendo) named in each joke's punchline commentary.
+- **Translation stretch**: the median length of an adapted version relative to its original, per language pair. Chinese originals grow about four times longer in English and Spanish.
+- **How much each culture rewrites**: versions in another language classified from their adaptation notes as kept close, reworded, or rebuilt around a swapped cultural reference.
+- **Crowd board**: the most "still funny" versions and the ones most often "lost in translation".
+- **Collection**: jokes by origin, original languages, the 18+ share, accepted explanations, and versions edited by admins.
+
+Culture colors in charts come from `--chart-en`, `--chart-es`, and `--chart-zh` in `app/globals.css`, stepped separately for light and dark surfaces and checked for color-vision deficiencies; culture names always accompany them.
+
+### Users, AI media, and ratings
+
+- **Users** (`/admin/users`, read-only) lists every known account: profiles, joke authors, raters, and explainers, with role, jokes, ratings, explanations, and last activity, plus a detail view with the account digest. To tell accounts apart, the app now also remembers each member's name, email, and last visit in `user_profiles` whenever the header loads their profile (at most hourly) or they share or explain a joke. Accounts not seen since then show without an email.
+- **AI media** (`/admin/media`) manages the AI-generated versions in `joke_adaptations`. **Create**: *Generate with AI* sends a joke (and optionally why it is funny) through the same adaptation request members use and publishes it as a member joke from the superadmin's account, without the daily limit. **Read**: search, filter by culture and origin, sort, and open any version with its commentary, ratings, and original joke. **Update**: edit the version text and its translation, core punchline, and notes in each language; the version keeps its ratings and is marked as edited. **Delete**: remove a version together with its ratings; the joke and its other versions stay.
+- **Ratings** (`/admin/ratings`, read-only) lists the newest 1,000 "Still funny?" answers with the rater, the version, and the original joke, filterable by answer and culture.
+
+`GET`/`POST /api/admin/media` and `PATCH`/`DELETE /api/admin/media/[id]` back the media page.
+
+### Checking the admin area
+
+`bun run check:admin` runs against a local `bun dev` server with the server-only key. With synthetic sessions it checks that visitors, forged, tampered, and expired sessions, signed-in members, and unverified emails are turned away from every admin page and API; then it grants a synthetic superadmin, renders every page, round-trips a synthetic joke through the media API (list, cross-site and invalid edits, edit, delete), checks creation input validation without calling Claude, and confirms that revoking the flag takes effect immediately. It deletes its profile and joke afterwards.
 
 ## Vercel
 
