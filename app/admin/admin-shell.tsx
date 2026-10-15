@@ -94,7 +94,7 @@ function Sidebar({ user, onNavigate }: { user: AdminUser; onNavigate?: () => voi
   return (
     <div className="flex h-full flex-col gap-6 p-4">
       <div className="flex items-center gap-3 px-1">
-        <UserAvatar name={user.name} src={user.image} />
+        <UserAvatar name={user.name} src={user.avatar} />
         <div className="flex min-w-0 flex-col">
           <Typography.Paragraph size="sm" className="truncate font-medium">{user.name}</Typography.Paragraph>
           <Typography.Paragraph size="xs" color="muted" className="truncate">{t.superadmin}</Typography.Paragraph>
@@ -129,6 +129,9 @@ function Sidebar({ user, onNavigate }: { user: AdminUser; onNavigate?: () => voi
   );
 }
 
+// The header and page share one centered column, so wide screens keep the content and header controls aligned.
+const column = "mx-auto w-full max-w-[1536px] px-4 sm:px-6";
+
 // Dashboard layout modeled on the HeroUI Pro dashboard template: a sidebar with the account and navigation,
 // and a sticky header above the page. Below the lg breakpoint the sidebar opens as a drawer.
 export function AdminShell({ user, children }: { user: AdminUser; children: ReactNode }) {
@@ -159,35 +162,37 @@ export function AdminShell({ user, children }: { user: AdminUser; children: Reac
         </Drawer.Content>
       </Drawer.Backdrop>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex items-center gap-3 bg-background/85 px-4 py-3 backdrop-blur sm:px-6">
-          <Button isIconOnly variant="ghost" size="sm" aria-label={t.toggleSidebar} onPress={toggle}>
-            <LayoutSideContentLeft aria-hidden className="size-4" />
-          </Button>
-          <NextLink href="/admin" className="flex items-center gap-2 font-semibold">
-            <Image src="/brand/logo-mark.png" alt="" width={24} height={24} className="size-6" />
-            <span className="hidden sm:inline">{localizedBrandName[locale]}</span>
-            <span className="font-normal text-muted">{t.console}</span>
-          </NextLink>
-          <Select aria-label={t.language} className="ml-auto w-32" value={locale}
-            onChange={(value) => { if (isAudienceId(value)) setLocale(value); }}>
-            <Select.Trigger>
-              <Select.Value>{({ defaultChildren, isPlaceholder }) => (isPlaceholder ? defaultChildren : nativeNames[locale])}</Select.Value>
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                {locales.map((option) => (
-                  <ListBox.Item key={option} id={option} textValue={nativeNames[option]}>
-                    {nativeNames[option]}
-                    <ListBox.ItemIndicator />
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
-          </Select>
+        <header className="sticky top-0 z-30 bg-background/85 backdrop-blur">
+          <div className={`${column} flex items-center gap-3 py-3`}>
+            <Button isIconOnly variant="ghost" size="sm" aria-label={t.toggleSidebar} onPress={toggle}>
+              <LayoutSideContentLeft aria-hidden className="size-4" />
+            </Button>
+            <NextLink href="/admin" className="flex items-center gap-2 font-semibold">
+              <Image src="/brand/logo-mark.png" alt="" width={24} height={24} className="size-6" />
+              <span className="hidden sm:inline">{localizedBrandName[locale]}</span>
+              <span className="font-normal text-muted">{t.console}</span>
+            </NextLink>
+            <Select aria-label={t.language} className="ml-auto w-32" value={locale}
+              onChange={(value) => { if (isAudienceId(value)) setLocale(value); }}>
+              <Select.Trigger>
+                <Select.Value>{({ defaultChildren, isPlaceholder }) => (isPlaceholder ? defaultChildren : nativeNames[locale])}</Select.Value>
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  {locales.map((option) => (
+                    <ListBox.Item key={option} id={option} textValue={nativeNames[option]}>
+                      {nativeNames[option]}
+                      <ListBox.ItemIndicator />
+                    </ListBox.Item>
+                  ))}
+                </ListBox>
+              </Select.Popover>
+            </Select>
+          </div>
         </header>
         <Separator className="lg:hidden" />
-        <main id="main" className="flex w-full max-w-[1400px] flex-1 flex-col gap-6 px-4 pt-4 pb-12 sm:px-6">{children}</main>
+        <main id="main" className={`${column} flex flex-1 flex-col gap-6 pt-4 pb-12`}>{children}</main>
       </div>
     </div>
   );

@@ -18,18 +18,25 @@ export type AdminAccess =
 
 const timeout = () => AbortSignal.timeout(15_000);
 
+const avatarUrl = (client: SupabaseClient, path: string | null, googleUrl: string | null) =>
+  path ? client.storage.from(avatarBucket).getPublicUrl(path).data.publicUrl : googleUrl;
+
 async function checkAccess(requestHeaders: Headers): Promise<AdminAccess> {
   const session = await auth.api.getSession({ headers: requestHeaders });
   if (!session) return { status: "anonymous" };
-  const user: AdminUser = { name: session.user.name, email: session.user.email, image: session.user.image ?? null };
+  const image = session.user.image ?? null;
+  const user: AdminUser = { name: session.user.name, email: session.user.email, image, avatar: image };
   const userId = stableUserId(session.user);
   const client = createServerSupabase();
   if (!userId || !client) return { status: "forbidden", user };
   // Read the flag on every request; a revoked superadmin loses access immediately. Errors fail closed.
-  const { data, error } = await client.from("user_profiles").select("is_superadmin").eq("user_id", userId)
+  const { data, error } = await client.from("user_profiles").select("is_superadmin,avatar_source,avatar_path,google_url").eq("user_id", userId)
     .abortSignal(timeout()).maybeSingle();
   if (error) throw error;
-  return data?.is_superadmin === true ? { status: "admin", user, userId, client } : { status: "forbidden", user };
+  if (data?.is_superadmin !== true) return { status: "forbidden", user };
+  // Show the avatar the member chose on the site: an uploaded photo, or their Google photo.
+  const avatar = avatarUrl(client, data.avatar_source === "upload" ? data.avatar_path : null, image ?? data.google_url);
+  return { status: "admin", user: { ...user, avatar: avatar ?? null }, userId, client };
 }
 
 // Pages and layouts: memoized for one render pass, so the layout and page share a single check.
@@ -55,9 +62,6 @@ export async function adminRequest(request: Request): Promise<Extract<AdminAcces
   if (access.status === "forbidden") return fail("Only superadmins can use the admin area.", 403);
   return access;
 }
-
-const avatarUrl = (client: SupabaseClient, path: string | null, googleUrl: string | null) =>
-  path ? client.storage.from(avatarBucket).getPublicUrl(path).data.publicUrl : googleUrl;
 
 export async function loadDashboard(client: SupabaseClient, days: number): Promise<DashboardStats> {
   const { data, error } = await client.rpc("admin_dashboard", { p_days: days }).abortSignal(timeout());

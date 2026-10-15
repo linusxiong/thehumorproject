@@ -7,8 +7,8 @@ export type AdminRange = (typeof adminRanges)[number];
 export const parseRange = (value: unknown): AdminRange =>
   adminRanges.find((range) => String(range) === value) ?? 30;
 
-// The signed-in superadmin, as shown in the admin shell.
-export type AdminUser = { name: string; email: string; image: string | null };
+// The signed-in superadmin. image is the Google photo from the session; avatar is the photo they chose on the site.
+export type AdminUser = { name: string; email: string; image: string | null; avatar: string | null };
 
 export type Mechanism = "reversal" | "deadpan" | "literal" | "absurd" | "wordplay" | "irony" | "self_mockery" | "innuendo";
 
