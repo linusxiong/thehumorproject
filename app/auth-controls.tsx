@@ -18,6 +18,8 @@ const en = {
   account: "Account",
   personalCenter: "Personal center",
   personalCenterHint: "Your ratings and profile photo",
+  admin: "Admin console",
+  adminHint: "Statistics, accounts, AI media, and ratings",
   signOut: "Sign out",
 };
 
@@ -32,6 +34,8 @@ const messages: Messages<typeof en> = {
     account: "Cuenta",
     personalCenter: "Centro personal",
     personalCenterHint: "Tus calificaciones y foto de perfil",
+    admin: "Consola de administración",
+    adminHint: "Estadísticas, cuentas, contenido IA y calificaciones",
     signOut: "Cerrar sesión",
   },
   zh: {
@@ -43,6 +47,8 @@ const messages: Messages<typeof en> = {
     account: "账户",
     personalCenter: "个人中心",
     personalCenterHint: "我的评价与头像",
+    admin: "管理后台",
+    adminHint: "统计、账户、AI 内容与评价",
     signOut: "退出登录",
   },
 };
@@ -114,6 +120,14 @@ export function AuthControls() {
                 <Description>{t.personalCenterHint}</Description>
               </div>
             </Dropdown.Item>
+            {profile?.isSuperadmin ? (
+              <Dropdown.Item id="admin" href="/admin" textValue={t.admin}>
+                <div className="flex flex-col">
+                  <Label>{t.admin}</Label>
+                  <Description>{t.adminHint}</Description>
+                </div>
+              </Dropdown.Item>
+            ) : null}
           </Dropdown.Section>
           <Separator />
           <Dropdown.Item id="sign-out" textValue={t.signOut} variant="danger">

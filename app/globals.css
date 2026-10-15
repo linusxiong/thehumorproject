@@ -12,6 +12,20 @@
   --accent-foreground: var(--eclipse);
 }
 
+/* Admin chart colors, one per culture. Stepped separately for light and dark surfaces and checked
+   for color-vision deficiencies; charts always pair them with a culture label. */
+:root {
+  --chart-en: #2a78d6;
+  --chart-es: #eda100;
+  --chart-zh: #e34948;
+}
+
+[data-theme="dark"] {
+  --chart-en: #3987e5;
+  --chart-es: #c78200;
+  --chart-zh: #d73337;
+}
+
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);

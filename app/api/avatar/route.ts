@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { auth, stableUserId } from "@/lib/auth";
-import { avatarBucket as bucket, createServerSupabase, rememberGoogleAvatar } from "@/lib/supabase-server";
+import { avatarBucket as bucket, createServerSupabase, profileIsStale, rememberProfile } from "@/lib/supabase-server";
 
 const maxBytes = 2 * 1024 * 1024;
 const ascii = (bytes: Uint8Array, start: number, end: number) => String.fromCharCode(...bytes.subarray(start, end));
@@ -19,9 +19,10 @@ async function avatarContext(request: Request) {
   return { session, userId: session ? stableUserId(session.user) : null, client: createServerSupabase() };
 }
 
-function profile(client: SupabaseClient | null, googleUrl: string | null | undefined, source: string, path: string | null) {
+// isSuperadmin is only present (and true) for superadmins, so the header can link to the admin area.
+function profile(client: SupabaseClient | null, googleUrl: string | null | undefined, source: string, path: string | null, isSuperadmin = false) {
   const uploadUrl = client && path ? client.storage.from(bucket).getPublicUrl(path).data.publicUrl : null;
-  return { source, googleUrl: googleUrl || null, uploadUrl };
+  return { source, googleUrl: googleUrl || null, uploadUrl, ...(isSuperadmin ? { isSuperadmin: true } : {}) };
 }
 
 async function removePhoto(client: SupabaseClient, path: string | null) {
@@ -35,12 +36,13 @@ export async function GET(request: Request) {
     const { session, userId, client } = await avatarContext(request);
     if (!session) return fail("Please sign in to see your profile photo.", 401);
     if (!client || !userId) return Response.json(profile(client, session.user.image, "google", null), { headers: noStore });
-    const { data, error } = await client.from("user_profiles").select("avatar_source,avatar_path,google_url")
+    const { data, error } = await client.from("user_profiles").select("avatar_source,avatar_path,google_url,display_name,email,last_seen_at,is_superadmin")
       .eq("user_id", userId).abortSignal(AbortSignal.timeout(15_000)).maybeSingle();
     if (error) throw error;
-    // The header loads this on every visit, which keeps the photo shown on the member's jokes current.
-    if (session.user.image && data?.google_url !== session.user.image) await rememberGoogleAvatar(client, userId, session.user.image);
-    return Response.json(profile(client, session.user.image, data?.avatar_source ?? "google", data?.avatar_path ?? null), { headers: noStore });
+    // The header loads this on every visit, which keeps the photo shown on the member's jokes and the admin account list current.
+    if (profileIsStale(data, session.user)) await rememberProfile(client, userId, session.user);
+    return Response.json(profile(client, session.user.image, data?.avatar_source ?? "google", data?.avatar_path ?? null, data?.is_superadmin === true),
+      { headers: noStore });
   } catch {
     return fail("Your profile photo could not be loaded. Please try again.", 500);
   }

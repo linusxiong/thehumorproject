@@ -3,7 +3,8 @@
 import { Avatar } from "@heroui/react";
 import { useEffect, useSyncExternalStore } from "react";
 
-export type AvatarProfile = { source: "google" | "upload"; googleUrl: string | null; uploadUrl: string | null };
+// isSuperadmin comes only with the initial load; avatar changes keep the flag already known.
+export type AvatarProfile = { source: "google" | "upload"; googleUrl: string | null; uploadUrl: string | null; isSuperadmin?: true };
 type AvatarState = { userId: string; profile: AvatarProfile | null; error: boolean };
 
 // One shared profile, so the header and the settings card update together after a change.
@@ -20,7 +21,8 @@ function update(next: AvatarState) {
 }
 
 export function setAvatarProfile(userId: string, profile: AvatarProfile) {
-  update({ userId, profile, error: false });
+  const known = state?.userId === userId ? state.profile?.isSuperadmin : undefined;
+  update({ userId, profile: known && !profile.isSuperadmin ? { ...profile, isSuperadmin: known } : profile, error: false });
 }
 
 function load(userId: string) {

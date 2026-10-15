@@ -2,7 +2,7 @@ import { auth, stableUserId } from "@/lib/auth";
 import { adaptJoke, isClaudeConfigured, type AdaptationResult } from "@/lib/claude";
 import { loadJokes } from "@/lib/joke-feed";
 import { dailyExplanationLimit, explanationLength } from "@/lib/jokes";
-import { createServerSupabase, rememberGoogleAvatar } from "@/lib/supabase-server";
+import { createServerSupabase, rememberProfile } from "@/lib/supabase-server";
 
 // Any member may explain what an existing joke really means when its versions missed the point.
 // The joke is re-adapted with that explanation; an accepted one replaces all versions (resetting their ratings)
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     // no_data_found: the joke was deleted while it was being adapted.
     if (error?.code === "P0002") return fail("This joke no longer exists.", 404);
     if (error) throw error;
-    await rememberGoogleAvatar(client, userId, session.user.image);
+    await rememberProfile(client, userId, session.user);
     const [joke] = await loadJokes(client, userId, jokeId);
     if (!joke) return fail("This joke no longer exists.", 404);
     return Response.json(joke, { headers: noStore });

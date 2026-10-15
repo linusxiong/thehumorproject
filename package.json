@@ -12,9 +12,12 @@
     "check:avatar": "bun scripts/check-avatar.ts",
     "check:avatar:live": "bun --env-file=.env.local scripts/check-avatar-live.ts",
     "check:jokes": "bun scripts/check-jokes.ts",
-    "import:qiushibaike": "bun --env-file=.env.local scripts/import-qiushibaike.ts"
+    "check:admin": "bun --env-file=.env.local scripts/check-admin.ts",
+    "import:qiushibaike": "bun --env-file=.env.local scripts/import-qiushibaike.ts",
+    "admin:grant": "bun --env-file=.env.local scripts/grant-superadmin.ts"
   },
   "dependencies": {
+    "@gravity-ui/icons": "^2.23.0",
     "@heroui/react": "^3.2.6",
     "@heroui/styles": "^3.2.6",
     "@supabase/supabase-js": "^2.116.0",
