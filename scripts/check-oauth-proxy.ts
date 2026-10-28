@@ -87,4 +87,40 @@ assert.equal(local.status, 200);
 const localState = new URL((await local.json()).url).searchParams.get("state")!;
 const localDenied = await callback(new Request(`${productionURL}/auth/callback?${new URLSearchParams({ state: localState, error: "access_denied" })}`));
 assert.equal(localDenied.headers.get("location"), "http://localhost:3000/login?error=access_denied");
-console.log("PASS: Proxy round trip with separate session keys, custom callback, original-browser binding, cancellation, tampered/expired profiles, trusted origins, and direct production OAuth.");
+
+// The sign-up gate from the admin area: while signup_allowed refuses the account, both direct and proxied sign-ins
+// return to /login with signup_not_allowed and create no session.
+Object.assign(process.env, { SUPABASE_URL: "https://access.example.test", SUPABASE_SECRET_KEY: "sb_secret_test_only" });
+let allowed = false;
+const realFetch = globalThis.fetch;
+globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  const url = new URL(input instanceof Request ? input.url : String(input));
+  if (url.origin !== "https://access.example.test") return realFetch(input, init);
+  assert.equal(url.pathname, "/rest/v1/rpc/signup_allowed");
+  return Response.json(JSON.parse(String(init?.body)).p_email === "proxy-check@example.com" && allowed);
+}) as typeof fetch;
+async function directSignIn() {
+  const begun = await signIn(productionURL, production);
+  const directState = new URL((await begun.json()).url).searchParams.get("state")!;
+  return callback(new Request(`${productionURL}/auth/callback?${new URLSearchParams({ state: directState, code: "test-code" })}`, { headers: { cookie: cookies(begun) } }));
+}
+async function proxiedSignIn() {
+  const begun = await signIn();
+  const proxied = new URL((await begun.json()).url).searchParams.get("state")!;
+  const handoff = await callback(new Request(`${productionURL}/auth/callback?${new URLSearchParams({ state: proxied, code: "test-code" })}`));
+  return complete(new URL(handoff.headers.get("location")!), cookies(begun));
+}
+for (const [attempt, origin] of [[directSignIn, productionURL], [proxiedSignIn, previewURL]] as const) {
+  allowed = false;
+  const refused = await attempt();
+  const target = new URL(refused.headers.get("location")!, origin);
+  assert.equal(`${target.origin}${target.pathname}`, `${origin}/login`);
+  assert.equal(target.searchParams.get("error"), "signup_not_allowed");
+  assert(!cookies(refused).includes("session_token="));
+  allowed = true;
+  const admitted = await attempt();
+  assert.equal(admitted.headers.get("location"), `${origin}/members`);
+  assert(cookies(admitted).includes("session_token="));
+}
+globalThis.fetch = realFetch;
+console.log("PASS: Proxy round trip with separate session keys, custom callback, original-browser binding, cancellation, tampered/expired profiles, trusted origins, direct production OAuth, and the sign-up gate on direct and proxied sign-ins.");
