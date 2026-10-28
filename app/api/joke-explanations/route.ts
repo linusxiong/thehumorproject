@@ -1,5 +1,6 @@
 import { auth, stableUserId } from "@/lib/auth";
-import { adaptJoke, isClaudeConfigured, type AdaptationResult } from "@/lib/claude";
+import { isClaudeConfigured } from "@/lib/claude";
+import { adaptJoke, settleAdaptation, type Adaptation } from "@/lib/generation";
 import { loadJokes } from "@/lib/joke-feed";
 import { dailyExplanationLimit, explanationLength } from "@/lib/jokes";
 import { createServerSupabase, rememberProfile } from "@/lib/supabase-server";
@@ -44,13 +45,14 @@ export async function POST(request: Request) {
     if (lookupError) throw lookupError;
     if (!target) return fail("This joke no longer exists.", 404);
 
-    let result: AdaptationResult;
+    let adaptation: Adaptation;
     try {
-      result = await adaptJoke(target.body, { signal: request.signal, explanation });
+      adaptation = await adaptJoke({ client, userId, source: "explanation", jokeId, signal: request.signal }, target.body, explanation);
     } catch (error) {
       console.error("Joke re-adaptation failed:", error instanceof Error ? error.message : error);
       return fail("The joke could not be adapted right now. Please try again.", 502);
     }
+    const { result } = adaptation;
     if (!result.suitable) return fail("This joke cannot be adapted with that explanation.", 422);
 
     if (!result.explanationAccepted) {
@@ -64,6 +66,7 @@ export async function POST(request: Request) {
     // Replacing a joke's versions needs all three; a partial answer would silently drop a culture.
     if (result.adaptations.length < 3) {
       console.error(`Joke re-adaptation returned ${result.adaptations.length} valid versions.`);
+      await settleAdaptation(adaptation, { error: `Only ${result.adaptations.length} of 3 versions were valid.` });
       return fail("The joke could not be adapted right now. Please try again.", 502);
     }
 
@@ -71,9 +74,11 @@ export async function POST(request: Request) {
       p_joke_id: jokeId, p_user_id: userId, p_explanation: explanation,
       p_adult: result.adult, p_adaptations: result.adaptations,
     }).abortSignal(AbortSignal.timeout(15_000));
+    if (error) await settleAdaptation(adaptation, { error: "The versions could not be stored." });
     // no_data_found: the joke was deleted while it was being adapted.
     if (error?.code === "P0002") return fail("This joke no longer exists.", 404);
     if (error) throw error;
+    await settleAdaptation(adaptation, { jokeId });
     await rememberProfile(client, userId, session.user);
     const [joke] = await loadJokes(client, userId, jokeId);
     if (!joke) return fail("This joke no longer exists.", 404);

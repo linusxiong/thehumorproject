@@ -1,5 +1,6 @@
 import { auth, stableUserId } from "@/lib/auth";
-import { adaptJoke, isClaudeConfigured, type AdaptationResult } from "@/lib/claude";
+import { isClaudeConfigured } from "@/lib/claude";
+import { adaptJoke, settleAdaptation, type Adaptation } from "@/lib/generation";
 import { loadJokes } from "@/lib/joke-feed";
 import { dailyJokeLimit, explanationLength, jokeLength } from "@/lib/jokes";
 import { createServerSupabase, rememberProfile } from "@/lib/supabase-server";
@@ -50,13 +51,14 @@ export async function POST(request: Request) {
     if (countError || count === null) throw countError ?? new Error("Missing joke count.");
     if (count >= dailyJokeLimit) return fail(`You can share up to ${dailyJokeLimit} jokes per day. Please try again tomorrow.`, 429);
 
-    let result: AdaptationResult;
+    let adaptation: Adaptation;
     try {
-      result = await adaptJoke(body, { signal: request.signal, explanation: explanation || undefined });
+      adaptation = await adaptJoke({ client, userId, source: "share", signal: request.signal }, body, explanation || undefined);
     } catch (error) {
       console.error("Joke adaptation failed:", error instanceof Error ? error.message : error);
       return fail("The joke could not be adapted right now. Please try again.", 502);
     }
+    const { result } = adaptation;
     if (!result.suitable) {
       return fail("Please share a self-contained joke in English, Spanish, or Chinese that is not hateful or harassing.", 422);
     }
@@ -67,7 +69,11 @@ export async function POST(request: Request) {
       p_author_id: userId, p_author_name: authorName, p_body: body, p_source_language: result.sourceLanguage, p_adaptations: result.adaptations,
       p_adult: result.adult, p_explanation: explanation || null,
     }).abortSignal(AbortSignal.timeout(15_000));
-    if (error) throw error;
+    if (error) {
+      await settleAdaptation(adaptation, { error: "The joke could not be stored." });
+      throw error;
+    }
+    await settleAdaptation(adaptation, { jokeId: Number(jokeId) });
     await rememberProfile(client, userId, session.user);
     const [joke] = await loadJokes(client, userId, Number(jokeId));
     if (!joke) throw new Error("The new joke could not be loaded.");

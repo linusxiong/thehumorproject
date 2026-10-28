@@ -7,7 +7,7 @@ import { htmlLang, localizedBrandName, useLocale, type Messages } from "../local
 const datasetUrl = "https://huggingface.co/datasets/qiushibaike-bak/metadata";
 const datasetId = "qiushibaike-bak/metadata";
 const issuesUrl = "https://github.com/linusxiong/thehumorproject/issues";
-const updated = new Date("2026-10-14T00:00:00Z");
+const updated = new Date("2026-10-28T00:00:00Z");
 
 type Section = { id: string; title: string; paragraphs: string[] };
 
@@ -53,6 +53,7 @@ const en = {
     ] },
     { id: "privacy", title: "Privacy", paragraphs: [
       "We use your Google name and profile photo to show your account, and store a one-way digest of your verified email to keep one rating per version. Jokes you share are public and credited with your first name. We do not sell personal data.",
+      "When you preview, share, or explain a joke, we keep a record of the AI request, including the text you entered (even a draft you did not share) and the answer, so our team can review quality and misuse.",
     ] },
     { id: "liability", title: "Disclaimers and changes", paragraphs: [
       "The service is provided as is, without warranties. To the extent the law allows, we are not liable for indirect or consequential damages arising from its use. We may update these terms; the date above shows the latest version, and continued use means you accept the changes.",
@@ -104,6 +105,7 @@ const messages: Messages<typeof en> = {
       ] },
       { id: "privacy", title: "Privacidad", paragraphs: [
         "Usamos tu nombre y foto de Google para mostrar tu cuenta, y guardamos un resumen irreversible de tu correo verificado para mantener una calificación por versión. Los chistes que compartes son públicos y se firman con tu nombre de pila. No vendemos datos personales.",
+        "Cuando previsualizas, compartes o explicas un chiste, guardamos un registro de la solicitud a la IA, con el texto que escribiste (incluso un borrador que no compartiste) y la respuesta, para que nuestro equipo revise la calidad y los abusos.",
       ] },
       { id: "liability", title: "Exenciones y cambios", paragraphs: [
         "El servicio se ofrece tal cual, sin garantías. En la medida en que la ley lo permita, no respondemos de daños indirectos o consecuentes derivados de su uso. Podemos actualizar estos términos; la fecha de arriba indica la versión vigente y seguir usando el servicio implica aceptar los cambios.",
@@ -152,6 +154,7 @@ const messages: Messages<typeof en> = {
       ] },
       { id: "privacy", title: "隐私", paragraphs: [
         "我们使用你的 Google 名字和头像来显示你的账号，并保存已验证邮箱的不可逆摘要，以保证每个版本只评一次分。你分享的笑话是公开的，并以你的名字署名。我们不会出售个人数据。",
+        "当你预览、分享或解释笑话时，我们会保存这次 AI 请求的记录，包括你输入的文本（即使是没有分享的草稿）和返回的结果，以便团队检查质量和滥用情况。",
       ] },
       { id: "liability", title: "免责声明与条款变更", paragraphs: [
         "本服务按现状提供，不作任何保证。在法律允许的范围内，我们不对因使用本服务产生的间接或后果性损失承担责任。我们可能更新本条款；上方日期为当前版本，继续使用即表示你接受变更。",

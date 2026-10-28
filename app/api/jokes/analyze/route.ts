@@ -1,9 +1,11 @@
 import { auth, stableUserId } from "@/lib/auth";
-import { analyzeJoke, isClaudeConfigured, type AnalysisResult } from "@/lib/claude";
+import { isClaudeConfigured, type AnalysisResult } from "@/lib/claude";
+import { previewJoke } from "@/lib/generation";
 import { isAudienceId, jokeLength, type JokeAnalysis } from "@/lib/jokes";
+import { createServerSupabase } from "@/lib/supabase-server";
 
 // Step one of sharing: explain what makes a joke funny, in the reader's interface language, so the author can confirm
-// or correct it before the joke is adapted. Nothing is stored.
+// or correct it before the joke is adapted. No joke is stored; the request is logged for the admin area.
 // One analysis request may take up to 100 seconds.
 export const maxDuration = 120;
 
@@ -15,7 +17,8 @@ export async function POST(request: Request) {
   try {
     const session = await auth.api.getSession({ headers: request.headers });
     if (!session) return fail("Please sign in to share a joke.", 401);
-    if (!stableUserId(session.user)) return fail("A verified email is required to share a joke.", 403);
+    const userId = stableUserId(session.user);
+    if (!userId) return fail("A verified email is required to share a joke.", 403);
     const input = await request.json().catch(() => null);
     const body = typeof input?.body === "string" ? input.body.trim() : "";
     if (body.length < jokeLength.min || body.length > jokeLength.max) {
@@ -26,7 +29,7 @@ export async function POST(request: Request) {
 
     let result: AnalysisResult;
     try {
-      result = await analyzeJoke(body, input.locale, request.signal);
+      result = await previewJoke({ client: createServerSupabase(), userId, source: "share", signal: request.signal }, body, input.locale);
     } catch (error) {
       console.error("Joke analysis failed:", error instanceof Error ? error.message : error);
       return fail("The joke could not be read right now. Please try again.", 502);

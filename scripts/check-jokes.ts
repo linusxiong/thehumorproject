@@ -69,6 +69,31 @@ let expectedLanguage = "English";
 let nextJokeId = 1000;
 let nextAdaptationId = 1000;
 
+// ai_generation_context stand-in: the prompt chains the access migration seeds (null: the migration is not applied),
+// glossary terms, and reference examples; plus the generation_requests and llm_responses logs the routes write.
+type ChainStep = { id: number; position: number; kind: "analysis" | "adaptation"; model_id: number; model: string; effort: string; max_tokens: number };
+const chainStep = (id: number, position: number, kind: ChainStep["kind"], model = "claude-haiku-5-5", effort = "medium"): ChainStep =>
+  ({ id, position, kind, model_id: 1, model, effort, max_tokens: kind === "analysis" ? 8_000 : 16_000 });
+const seededChains = () => ({
+  preview: [{ id: 1, weight: 100, steps: [chainStep(1, 1, "analysis")] }],
+  adaptation: [
+    { id: 2, weight: 100, steps: [chainStep(2, 1, "adaptation")] },
+    { id: 3, weight: 0, steps: [chainStep(3, 1, "adaptation", "claude-haiku-5-5", "high")] },
+    { id: 4, weight: 0, steps: [chainStep(4, 1, "analysis"), chainStep(5, 2, "adaptation")] },
+  ],
+});
+let chains: ReturnType<typeof seededChains> | null = seededChains();
+let glossary: { term: string; language: string; definition: string; example: string | null }[] = [];
+let examples: Record<string, string | null>[] = [];
+const generationRequests: Record<string, unknown>[] = [];
+const llmResponses: Record<string, unknown>[] = [];
+// What each Claude request should carry under the active chain step and admin glossary.
+let expectedModel = "claude-haiku-5-5";
+let expectedEffort = "medium";
+let expectedGlossary: string | null = null;
+let expectedExamples = false;
+const withGlossary = (content: string) => (expectedGlossary === null ? content : `${content}\n<glossary>\n${expectedGlossary}\n</glossary>`);
+
 function feed(viewer: string | null, jokeId: number | null, limit: number) {
   const order = ["en", "es", "zh"];
   return jokes.filter((joke) => jokeId === null || joke.id === jokeId)
@@ -103,10 +128,12 @@ function claude(init: RequestInit | undefined) {
   const schema = request.output_config.format.schema;
   // Analysis requests are told apart from adaptation requests by their answer schema.
   const analysis = "punchline" in schema.properties;
-  assert.equal(request.model, "claude-haiku-5-5");
+  assert.equal(request.model, expectedModel);
   assert.equal(request.max_tokens, analysis ? 8_000 : 16_000);
   assert.equal(request.tools, undefined, "JSON outputs keep adaptive thinking available; forced tools would disable it");
-  assert.equal(request.output_config.effort, "medium");
+  assert.equal(request.output_config.effort, expectedEffort);
+  assert.equal(request.system.includes("<glossary>"), expectedGlossary !== null, "The glossary note appears only with a glossary");
+  assert.equal(request.system.includes("<examples>"), expectedExamples && !analysis, "Reference examples go to adaptation requests only");
   assert.equal(request.output_config.format.type, "json_schema");
   assert.match(request.system, /Punchline Passport/);
   assert.match(request.system, /上来自己动/, "The prompt teaches hidden homophones and innuendo");
@@ -114,13 +141,13 @@ function claude(init: RequestInit | undefined) {
   if (analysis) {
     assert.deepEqual(schema.required, ["suitable", "source_language", "adult", "punchline"]);
     assert.ok(request.system.includes(`in ${expectedLanguage}`), "The punchline is written in the reader's interface language");
-    assert.equal(request.messages[0].content, `<joke>\n${submitted}\n</joke>`);
+    assert.equal(request.messages[0].content, withGlossary(`<joke>\n${submitted}\n</joke>`));
   } else {
     assert.deepEqual(schema.required, ["source_language", "suitable", "adult", "explanation_accepted", "versions"]);
     assert.deepEqual(schema.properties.versions.required, ["en", "es", "zh"]);
-    assert.equal(request.messages[0].content, expectedExplanation === null
+    assert.equal(request.messages[0].content, withGlossary(expectedExplanation === null
       ? `<joke>\n${submitted}\n</joke>`
-      : `<joke>\n${submitted}\n</joke>\n<explanation>\n${expectedExplanation}\n</explanation>`);
+      : `<joke>\n${submitted}\n</joke>\n<explanation>\n${expectedExplanation}\n</explanation>`));
   }
   claudeRequests++;
   if (claudeMode === "error") return Response.json({ type: "error", error: { type: "overloaded_error" } }, { status: 529 });
@@ -133,7 +160,7 @@ function claude(init: RequestInit | undefined) {
     };
     return Response.json({
       content: [{ type: "thinking", thinking: "" }, { type: "text", text: JSON.stringify(answer) }],
-      stop_reason: claudeMode === "truncated" ? "max_tokens" : "end_turn",
+      stop_reason: claudeMode === "truncated" ? "max_tokens" : "end_turn", usage: { input_tokens: 90, output_tokens: 150 },
     });
   }
   const versions = { en: version("en"), es: version("es"), zh: version("zh") };
@@ -148,7 +175,7 @@ function claude(init: RequestInit | undefined) {
   };
   return Response.json({
     content: [{ type: "thinking", thinking: "" }, { type: "text", text: JSON.stringify(input) }],
-    stop_reason: claudeMode === "truncated" ? "max_tokens" : "end_turn",
+    stop_reason: claudeMode === "truncated" ? "max_tokens" : "end_turn", usage: { input_tokens: 120, output_tokens: 340, cache_read_input_tokens: 0 },
   });
 }
 
@@ -227,6 +254,33 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
       else ratings.push({ adaptation_id: body.adaptation_id, user_id: body.user_id, funny: body.funny });
       return new Response(null, { status: 201 });
     }
+    case "/rest/v1/rpc/ai_generation_context": {
+      if (!chains) return Response.json({ code: "PGRST202", message: "Could not find the function" }, { status: 404 });
+      // The database matches terms as substrings; the app checks word boundaries.
+      const text = String(body.p_text).toLowerCase();
+      return Response.json({
+        chains: chains[body.p_purpose as "preview" | "adaptation"],
+        terms: glossary.filter((entry) => text.includes(entry.term.toLowerCase())),
+        examples,
+      });
+    }
+    case "/rest/v1/generation_requests": {
+      if (init?.method === "PATCH") {
+        const row = generationRequests.find((item) => item.id === Number(value("id")));
+        assert.ok(row, "Only logged requests are updated");
+        Object.assign(row, body);
+        return new Response(null, { status: 204 });
+      }
+      assert.equal(init?.method, "POST");
+      const row = { ...body, id: generationRequests.length + 1, status: "pending" };
+      generationRequests.push(row);
+      return Response.json({ id: row.id }, { status: 201 });
+    }
+    case "/rest/v1/llm_responses":
+      assert.equal(init?.method, "POST");
+      assert.ok(generationRequests.some((item) => item.id === body.request_id), "Responses belong to a logged request");
+      llmResponses.push(body);
+      return new Response(null, { status: 201 });
     case "/rest/v1/user_profiles": {
       assert.equal(init?.method, "POST");
       assert.equal(url.searchParams.get("on_conflict"), "user_id");
@@ -540,6 +594,84 @@ try {
   assert.equal(claudeRequests, 7);
   expectedExplanation = null;
   claudeAdult = false;
+  claudeRequests = 0;
+
+  // Every AI request is logged with its chain, account, status, and joke; every model call with its step and usage.
+  const requestLog = (purpose: string) => generationRequests.filter((row) => row.purpose === purpose);
+  assert.equal(requestLog("preview").length, 9, "Every punchline preview is logged, including failed ones");
+  assert.ok(requestLog("preview").every((row) => row.chain_id === 1 && row.user_id === userId && row.source === "share" && row.completed_at));
+  assert.deepEqual(requestLog("preview").at(-1), {
+    ...requestLog("preview").at(-1), input: fridgeJoke, locale: "es", status: "succeeded",
+  });
+  const shared = requestLog("adaptation").find((row) => row.status === "succeeded" && row.source === "share");
+  assert.ok(shared && typeof shared.joke_id === "number" && jokes.some((item) => item.id === shared.joke_id), "A shared joke is linked to its request");
+  assert.ok(requestLog("adaptation").some((row) => row.status === "unsuitable"));
+  assert.ok(requestLog("adaptation").some((row) => row.status === "rejected" && row.source === "explanation" && row.joke_id === 1));
+  const failedRequest = requestLog("adaptation").find((row) => row.status === "failed" && /529/.test(String(row.error)));
+  assert.ok(failedRequest, "A failed request keeps the reason");
+  assert.equal(generationRequests.filter((row) => row.status === "pending").length, 0, "Every request is finished");
+  assert.equal(llmResponses.length, generationRequests.length, "The seeded chains make one model call per request");
+  const failedCall = llmResponses.find((row) => row.request_id === failedRequest.id)!;
+  assert.deepEqual([failedCall.status, failedCall.http_status, failedCall.kind, failedCall.model], ["failed", 529, "adaptation", "claude-haiku-5-5"]);
+  const sharedCall = llmResponses.find((row) => row.request_id === shared.id)!;
+  assert.deepEqual([sharedCall.status, sharedCall.step_id, sharedCall.model_id, sharedCall.input_tokens, sharedCall.output_tokens, sharedCall.stop_reason],
+    ["succeeded", 2, 1, 120, 340, "end_turn"]);
+  assert.match(String(sharedCall.prompt), /^<joke>\n/);
+  assert.equal((sharedCall.answer as { suitable: boolean }).suitable, true, "The model's JSON answer is kept");
+  assert.ok(llmResponses.some((row) => row.status === "refused"), "Refusals are logged as such");
+
+  // Glossary terms found in the joke (English terms as whole words) and the reference examples reach the model.
+  const chainMember = await cookie(false, true, "chain-check@example.com");
+  const loggedBefore = generationRequests.length;
+  glossary = [
+    { term: "therapist", language: "en", definition: "A counselor people talk to.", example: null },
+    { term: "venge", language: "en", definition: "Never sent: only part of a word in this joke.", example: null },
+    { term: "躺平", language: "zh", definition: "Lying flat: opting out.", example: "我躺平了。" },
+  ];
+  examples = [{ source_language: "en", en: "Original.", es: "Versión.", zh: "版本。", explanation: null, notes: "Kept the pun." }];
+  submitted = joke;
+  expectedGlossary = "- therapist (en): A counselor people talk to.";
+  expectedExamples = true;
+  assert.equal((await share({ body: joke }, chainMember)).status, 201);
+  assert.match(String(llmResponses.at(-1)!.prompt), /<glossary>\n- therapist \(en\)/);
+  expectedLanguage = "English";
+  assert.equal((await analyze({ body: joke, locale: "en" }, chainMember)).status, 200, "Previews get the glossary but no examples");
+  glossary = [];
+  examples = [];
+  expectedGlossary = null;
+  expectedExamples = false;
+
+  // The mix picks the chain; its steps set the model and effort. "Read first" reads the punchline itself when nobody
+  // explained the joke (a reading that is never rejected or stored), and skips that step when a member did.
+  chains.adaptation[0].weight = 0;
+  chains.adaptation[2].weight = 100;
+  for (const item of chains.adaptation[2].steps) Object.assign(item, { model: "claude-sonnet-5-5", effort: "high" });
+  expectedModel = "claude-sonnet-5-5";
+  expectedEffort = "high";
+  expectedExplanation = "We hear a pun.";
+  claudeAccepts = false;
+  const before = claudeRequests;
+  const readFirst = await share({ body: joke }, chainMember);
+  assert.equal(readFirst.status, 201);
+  assert.equal(claudeRequests - before, 2, "Reading the punchline, then adapting");
+  assert.equal(((await readFirst.json()) as Joke).explanation, null, "The chain's own reading is not stored as the author's explanation");
+  claudeAccepts = true;
+  expectedExplanation = explanation;
+  assert.equal((await share({ body: joke, explanation }, chainMember)).status, 201);
+  assert.equal(claudeRequests - before, 3, "A member's explanation replaces the reading step");
+  const chainLog = generationRequests.slice(loggedBefore + 2);
+  assert.deepEqual(chainLog.map((row) => [row.chain_id, row.status]), [[4, "succeeded"], [4, "succeeded"]]);
+  assert.deepEqual(llmResponses.filter((row) => row.request_id === chainLog[0].id).map((row) => [row.step_id, row.kind, row.model, row.effort]),
+    [[4, "analysis", "claude-sonnet-5-5", "high"], [5, "adaptation", "claude-sonnet-5-5", "high"]]);
+  expectedExplanation = null;
+
+  // Before the migration is applied, requests run the built-in defaults; a failing log never fails a member.
+  chains = null;
+  expectedModel = "claude-haiku-5-5";
+  expectedEffort = "medium";
+  assert.equal((await share({ body: joke }, chainMember)).status, 201);
+  assert.equal(generationRequests.at(-1)!.chain_id, null);
+  chains = seededChains();
 
   // Unknown versions and missing configuration.
   assert.equal((await rate({ adaptationId: 999_999, funny: true }, valid)).status, 404);
@@ -550,7 +682,7 @@ try {
   assert.equal((await rate({ adaptationId: 1, funny: true }, valid)).status, 503);
   assert.equal((await explain({ jokeId: 1, explanation }, valid)).status, 503);
   assert.equal((await jokesRoute.GET(new Request(`${origin}/api/jokes`))).status, 503);
-  console.log("PASS: Joke feed with origins and localized commentary, blind totals, one Claude request per joke, source language detection, partially invalid and failed adaptation, unsuitable and unsupported-language jokes, daily limit, ratings and withdrawal, punchline analysis in the reader's language, sharing with an explanation, adult jokes flagged 18+, community explanations (rejected, limited, unknown, and accepted re-adaptation with reset ratings), guest/expired/tampered/unverified sessions, CSRF, invalid input, unknown versions, and missing configuration.");
+  console.log("PASS: Joke feed with origins and localized commentary, blind totals, one Claude request per joke, prompt chains from the mix with their models and effort, glossary terms and reference examples, request and model-call logs, the built-in chain before the migration, source language detection, partially invalid and failed adaptation, unsuitable and unsupported-language jokes, daily limit, ratings and withdrawal, punchline analysis in the reader's language, sharing with an explanation, adult jokes flagged 18+, community explanations (rejected, limited, unknown, and accepted re-adaptation with reset ratings), guest/expired/tampered/unverified sessions, CSRF, invalid input, unknown versions, and missing configuration.");
 } finally {
   globalThis.fetch = originalFetch;
 }
