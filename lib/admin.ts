@@ -3,7 +3,11 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { auth, stableUserId } from "@/lib/auth";
-import { mediaLimits, type AdminAccount, type AdminRating, type AdminUser, type DashboardStats, type MediaItem, type MediaUpdate } from "@/lib/admin-types";
+import { resources, type ResourceName, type ResourceRows } from "@/lib/admin-resources";
+import {
+  mediaLimits, type AccessSummary, type AdminAccount, type AdminImage, type AdminRating, type AdminUser, type DashboardStats,
+  type GenerationRequest, type LlmResponseSummary, type MediaItem, type MediaUpdate, type PromptChain,
+} from "@/lib/admin-types";
 import { audiences, type AudienceId } from "@/lib/jokes";
 import { avatarBucket, createServerSupabase } from "@/lib/supabase-server";
 
@@ -63,6 +67,19 @@ export async function adminRequest(request: Request): Promise<Extract<AdminAcces
   return access;
 }
 
+export const parseId = (value: string) => (/^[1-9]\d{0,15}$/.test(value) ? Number(value) : null);
+
+// Database errors a superadmin can fix: a duplicate, a row still in use, or a reference to a missing row.
+export function writeFailure(error: { code?: string; message: string }, action: "create" | "update" | "delete") {
+  if (error.code === "23505") return fail("A record with this value already exists.", 409);
+  // 23001: a restricted reference (a model a chain step runs on, a provider with models); 23503: any other reference.
+  if (error.code === "23503" || error.code === "23001") {
+    return action === "delete" ? fail("Other records still use this one. Change or delete them first.", 409) : fail("The linked record does not exist.", 400);
+  }
+  if (error.code === "23514" || error.code === "22P02") return fail("Each field needs a valid value within its length limit.", 400);
+  throw new Error(error.message);
+}
+
 export async function loadDashboard(client: SupabaseClient, days: number): Promise<DashboardStats> {
   const { data, error } = await client.rpc("admin_dashboard", { p_days: days }).abortSignal(timeout());
   if (error) throw error;
@@ -118,4 +135,47 @@ export function parseMediaUpdate(input: unknown, audience: AudienceId): MediaUpd
   const notes = localizedText(value.notes, mediaLimits.notes);
   if (!body || !punchlineCore || !notes) return null;
   return { body, gloss: { ...gloss, [audience]: body }, punchline_core: punchlineCore, notes };
+}
+
+export async function loadResource<Name extends ResourceName>(client: SupabaseClient, name: Name): Promise<ResourceRows[Name][]> {
+  const { table, select, order } = resources[name];
+  const [column, direction] = order.split(".");
+  const { data, error } = await client.from(table).select(select).order(column, { ascending: direction !== "desc" }).order("id")
+    .limit(5000).abortSignal(timeout());
+  if (error) throw error;
+  return (data ?? []) as unknown as ResourceRows[Name][];
+}
+
+export async function loadPromptChains(client: SupabaseClient): Promise<PromptChain[]> {
+  const { data, error } = await client.rpc("admin_prompt_chains").abortSignal(timeout());
+  if (error) throw error;
+  return (data ?? []) as PromptChain[];
+}
+
+export async function loadGenerationRequests(client: SupabaseClient): Promise<GenerationRequest[]> {
+  const { data, error } = await client.rpc("admin_generation_requests", { p_limit: 1000 }).abortSignal(timeout());
+  if (error) throw error;
+  return (data ?? []) as GenerationRequest[];
+}
+
+export async function loadLlmResponses(client: SupabaseClient): Promise<LlmResponseSummary[]> {
+  const { data, error } = await client.rpc("admin_llm_responses", { p_limit: 1000 }).abortSignal(timeout());
+  if (error) throw error;
+  return (data ?? []) as LlmResponseSummary[];
+}
+
+export async function loadImages(client: SupabaseClient): Promise<AdminImage[]> {
+  const { data, error } = await client.rpc("admin_images").abortSignal(timeout());
+  if (error) throw error;
+  return ((data ?? []) as Omit<AdminImage, "url">[]).map((image) => ({ ...image, url: avatarUrl(client, image.path, null)! }));
+}
+
+export async function loadAccessSummary(client: SupabaseClient): Promise<AccessSummary> {
+  const count = async (table: string) => {
+    const { count: rows, error } = await client.from(table).select("id", { count: "exact", head: true }).abortSignal(timeout());
+    if (error || rows === null) throw error ?? new Error(`Missing ${table} count.`);
+    return rows;
+  };
+  const [domains, emails] = await Promise.all([count("allowed_signup_domains"), count("whitelisted_emails")]);
+  return { domains, emails };
 }

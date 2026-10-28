@@ -1,6 +1,9 @@
 "use client";
 
-import { ArrowRightFromSquare, ArrowUpRightFromSquare, House, LayoutSideContentLeft, Persons, Sparkles, ThumbsUp } from "@gravity-ui/icons";
+import {
+  ArrowRightFromSquare, ArrowUpRightFromSquare, Book, Comments, Cpu, Envelope, Globe, House, LayoutSideContentLeft, ListTimeline, NodesRight, Persons,
+  Picture, Server, Sliders, Sparkles, SquareArticle, ThumbsUp,
+} from "@gravity-ui/icons";
 import { Button, buttonVariants, Drawer, ListBox, Select, Separator, Typography, toast } from "@heroui/react";
 import Image from "next/image";
 import NextLink from "next/link";
@@ -20,6 +23,18 @@ const en = {
   users: "Users",
   media: "AI media",
   ratings: "Ratings",
+  images: "Images",
+  requests: "Generation requests",
+  responses: "LLM responses",
+  chains: "Prompt chains",
+  mix: "Chain mix",
+  terms: "Terms",
+  examples: "Generation examples",
+  models: "LLM models",
+  providers: "LLM providers",
+  domains: "Sign-up domains",
+  emails: "Whitelisted emails",
+  sections: { overview: "Overview", community: "Community", content: "AI content", prompts: "Prompts", llm: "Models", access: "Access" },
   viewSite: "View site",
   signOut: "Sign out",
   signOutFailed: "Sign out failed. Please try again.",
@@ -38,6 +53,18 @@ const messages: Messages<typeof en> = {
     users: "Usuarios",
     media: "Contenido IA",
     ratings: "Calificaciones",
+    images: "Imágenes",
+    requests: "Solicitudes de generación",
+    responses: "Respuestas del LLM",
+    chains: "Cadenas de prompts",
+    mix: "Mezcla de cadenas",
+    terms: "Términos",
+    examples: "Ejemplos de generación",
+    models: "Modelos LLM",
+    providers: "Proveedores LLM",
+    domains: "Dominios de registro",
+    emails: "Correos autorizados",
+    sections: { overview: "General", community: "Comunidad", content: "Contenido IA", prompts: "Prompts", llm: "Modelos", access: "Acceso" },
     viewSite: "Ver el sitio",
     signOut: "Cerrar sesión",
     signOutFailed: "No se pudo cerrar sesión. Inténtalo de nuevo.",
@@ -53,6 +80,18 @@ const messages: Messages<typeof en> = {
     users: "用户",
     media: "AI 内容",
     ratings: "评价",
+    images: "图片",
+    requests: "生成请求",
+    responses: "LLM 响应",
+    chains: "Prompt 链",
+    mix: "链路配比",
+    terms: "术语",
+    examples: "生成示例",
+    models: "LLM 模型",
+    providers: "LLM 提供方",
+    domains: "允许注册的域名",
+    emails: "邮箱白名单",
+    sections: { overview: "概览", community: "社区", content: "AI 内容", prompts: "Prompt", llm: "模型", access: "访问控制" },
     viewSite: "查看网站",
     signOut: "退出登录",
     signOutFailed: "退出登录失败，请重试。",
@@ -62,13 +101,37 @@ const messages: Messages<typeof en> = {
   },
 };
 
-type NavItem = { href: string; key: "dashboard" | "users" | "media" | "ratings"; icon: ComponentType<SVGProps<SVGSVGElement>> };
+type NavKey = "dashboard" | "users" | "ratings" | "images" | "media" | "requests" | "responses" | "chains" | "mix" | "terms" | "examples"
+  | "models" | "providers" | "domains" | "emails";
+type NavItem = { href: string; key: NavKey; icon: ComponentType<SVGProps<SVGSVGElement>> };
+type NavSection = { key: keyof typeof en.sections; items: NavItem[] };
 
-const nav: NavItem[] = [
-  { href: "/admin", key: "dashboard", icon: House },
-  { href: "/admin/users", key: "users", icon: Persons },
-  { href: "/admin/media", key: "media", icon: Sparkles },
-  { href: "/admin/ratings", key: "ratings", icon: ThumbsUp },
+const nav: NavSection[] = [
+  { key: "overview", items: [{ href: "/admin", key: "dashboard", icon: House }] },
+  { key: "community", items: [
+    { href: "/admin/users", key: "users", icon: Persons },
+    { href: "/admin/ratings", key: "ratings", icon: ThumbsUp },
+    { href: "/admin/images", key: "images", icon: Picture },
+  ] },
+  { key: "content", items: [
+    { href: "/admin/media", key: "media", icon: Sparkles },
+    { href: "/admin/requests", key: "requests", icon: ListTimeline },
+    { href: "/admin/responses", key: "responses", icon: Comments },
+  ] },
+  { key: "prompts", items: [
+    { href: "/admin/prompt-chains", key: "chains", icon: NodesRight },
+    { href: "/admin/mix", key: "mix", icon: Sliders },
+    { href: "/admin/terms", key: "terms", icon: Book },
+    { href: "/admin/examples", key: "examples", icon: SquareArticle },
+  ] },
+  { key: "llm", items: [
+    { href: "/admin/models", key: "models", icon: Cpu },
+    { href: "/admin/providers", key: "providers", icon: Server },
+  ] },
+  { key: "access", items: [
+    { href: "/admin/signup-domains", key: "domains", icon: Globe },
+    { href: "/admin/whitelist", key: "emails", icon: Envelope },
+  ] },
 ];
 
 const locales = Object.keys(nativeNames) as Locale[];
@@ -92,7 +155,7 @@ function Sidebar({ user, onNavigate }: { user: AdminUser; onNavigate?: () => voi
     buttonVariants({ variant: active ? "secondary" : "ghost", fullWidth: true, className: "justify-start gap-2.5 font-normal" });
 
   return (
-    <div className="flex h-full flex-col gap-6 p-4">
+    <div className="flex h-full flex-col gap-6 overflow-y-auto p-4">
       <div className="flex items-center gap-3 px-1">
         <UserAvatar name={user.name} src={user.avatar} />
         <div className="flex min-w-0 flex-col">
@@ -100,20 +163,25 @@ function Sidebar({ user, onNavigate }: { user: AdminUser; onNavigate?: () => voi
           <Typography.Paragraph size="xs" color="muted" className="truncate">{t.superadmin}</Typography.Paragraph>
         </div>
       </div>
-      <nav aria-label={t.navigation}>
-        <ul className="flex flex-col gap-1">
-          {nav.map(({ href, key, icon: Icon }) => {
-            const active = href === "/admin" ? pathname === href : pathname.startsWith(href);
-            return (
-              <li key={key}>
-                <NextLink href={href} aria-current={active ? "page" : undefined} className={item(active)} onClick={onNavigate}>
-                  <Icon aria-hidden className="size-4" />
-                  {t[key]}
-                </NextLink>
-              </li>
-            );
-          })}
-        </ul>
+      <nav aria-label={t.navigation} className="flex flex-col gap-4">
+        {nav.map((section) => (
+          <div key={section.key} className="flex flex-col gap-1">
+            <Typography.Paragraph id={`admin-nav-${section.key}`} size="xs" color="muted" className="px-3 font-medium">{t.sections[section.key]}</Typography.Paragraph>
+            <ul aria-labelledby={`admin-nav-${section.key}`} className="flex flex-col gap-1">
+              {section.items.map(({ href, key, icon: Icon }) => {
+                const active = href === "/admin" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
+                return (
+                  <li key={key}>
+                    <NextLink href={href} aria-current={active ? "page" : undefined} className={item(active)} onClick={onNavigate}>
+                      <Icon aria-hidden className="size-4" />
+                      {t[key]}
+                    </NextLink>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
       </nav>
       <div className="mt-auto flex flex-col gap-1">
         <NextLink href="/" className={item(false)} onClick={onNavigate}>

@@ -1,16 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { auth, stableUserId } from "@/lib/auth";
+import { maxPhotoBytes as maxBytes, photoFormat } from "@/lib/photos";
 import { avatarBucket as bucket, createServerSupabase, profileIsStale, rememberProfile } from "@/lib/supabase-server";
 
-const maxBytes = 2 * 1024 * 1024;
-const ascii = (bytes: Uint8Array, start: number, end: number) => String.fromCharCode(...bytes.subarray(start, end));
-// Trust the file's leading bytes, never the client-supplied name or type.
-const formats = [
-  { type: "image/jpeg", extension: "jpg", matches: (bytes: Uint8Array) => bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff },
-  { type: "image/png", extension: "png", matches: (bytes: Uint8Array) => ascii(bytes, 0, 8) === "\x89PNG\r\n\x1a\n" },
-  { type: "image/webp", extension: "webp", matches: (bytes: Uint8Array) => ascii(bytes, 0, 4) === "RIFF" && ascii(bytes, 8, 12) === "WEBP" },
-];
 const noStore = { "Cache-Control": "private, no-store" };
 const fail = (error: string, status: number) => Response.json({ error }, { status });
 
@@ -56,7 +49,7 @@ export async function POST(request: Request) {
     if (!(file instanceof Blob) || file.size === 0) return fail("Choose a photo to upload.", 400);
     if (file.size > maxBytes) return fail("Photos must be 2 MB or smaller.", 413);
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const format = formats.find((candidate) => candidate.matches(bytes));
+    const format = photoFormat(bytes);
     if (!format) return fail("Choose a JPEG, PNG, or WebP image.", 415);
     const path = `${randomUUID()}.${format.extension}`;
     const { error: uploadError } = await client.storage.from(bucket)

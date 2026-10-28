@@ -1,14 +1,14 @@
 "use client";
 
 import { Eye, Pencil, Sparkles, TrashBin } from "@gravity-ui/icons";
-import { Alert, AlertDialog, Button, Chip, Description, FieldError, Form, Label, ListBox, Modal, SearchField, Select, Spinner, Table, Tabs, TextArea, TextField, Typography, toast, type SortDescriptor } from "@heroui/react";
+import { Alert, AlertDialog, Button, Chip, Description, FieldError, Form, Label, Modal, SearchField, Spinner, Table, Tabs, TextArea, TextField, Typography, toast, type SortDescriptor } from "@heroui/react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { mediaLimits, type MediaItem } from "@/lib/admin-types";
 import { audiences, explanationLength, isAudienceId, jokeLength, localized, type AudienceId, type JokeOrigin } from "@/lib/jokes";
 import { sourceName } from "../cultures";
 import { audienceNames, htmlLang, useLocale, type Messages } from "../locale";
-import { CultureLabel, NoResults, PageHeading, plural, RatingCounts, TablePager, TimeText, useFormat, useHydrated, usePaged } from "./admin-ui";
+import { CultureLabel, FilterSelect, NoResults, PageHeading, plural, RatingCounts, TablePager, TimeText, useFormat, useHydrated, usePaged } from "./admin-ui";
 
 type OriginFilter = "all" | JokeOrigin;
 type Draft = { body: string; gloss: Record<AudienceId, string>; punchline_core: Record<AudienceId, string>; notes: Record<AudienceId, string> };
@@ -385,27 +385,6 @@ export function MediaManager({ items }: { items: MediaItem[] }) {
       <DeleteDialog item={deleting} onClose={() => setDeleting(null)} onDeleted={() => { setDeleting(null); router.refresh(); }} />
       {creating && <CreateModal onClose={() => setCreating(false)} onCreated={() => { setCreating(false); router.refresh(); }} />}
     </div>
-  );
-}
-
-function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: { id: string; label: string }[]; onChange: (value: string) => void }) {
-  return (
-    <Select aria-label={label} className="w-44" value={value} onChange={(next) => onChange(next == null ? "all" : String(next))}>
-      <Select.Trigger>
-        <Select.Value />
-        <Select.Indicator />
-      </Select.Trigger>
-      <Select.Popover>
-        <ListBox>
-          {options.map((option) => (
-            <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
-              {option.label}
-              <ListBox.ItemIndicator />
-            </ListBox.Item>
-          ))}
-        </ListBox>
-      </Select.Popover>
-    </Select>
   );
 }
 

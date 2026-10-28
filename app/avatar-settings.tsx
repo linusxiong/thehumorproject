@@ -80,12 +80,12 @@ const messages: Messages<typeof en> = {
   },
 };
 
-class PhotoError extends Error {}
+export class PhotoError extends Error {}
 
 const photoSize = 512;
 
 // Crop to the centered square an avatar shows and shrink camera photos far below the upload limit.
-async function squarePhoto(file: File, unreadable: string) {
+export async function squarePhoto(file: File, unreadable: string) {
   const image = await createImageBitmap(file).catch(() => { throw new PhotoError(unreadable); });
   const side = Math.min(image.width, image.height);
   const canvas = document.createElement("canvas");

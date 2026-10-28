@@ -1,7 +1,5 @@
-import { adminRequest, fail, noStore, parseMediaUpdate } from "@/lib/admin";
+import { adminRequest, fail, noStore, parseId, parseMediaUpdate } from "@/lib/admin";
 import { isAudienceId } from "@/lib/jokes";
-
-const parseId = (value: string) => (/^[1-9]\d{0,15}$/.test(value) ? Number(value) : null);
 
 // Correct one AI-generated version in place. Its ratings stay, because a superadmin edit fixes rather than replaces it.
 export async function PATCH(request: Request, context: RouteContext<"/api/admin/media/[id]">) {

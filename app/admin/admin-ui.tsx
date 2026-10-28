@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowDown, ArrowUp } from "@gravity-ui/icons";
-import { Card, Chip, EmptyState, Pagination, Typography } from "@heroui/react";
+import { Card, Chip, EmptyState, ListBox, Pagination, Select, Typography } from "@heroui/react";
 import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { AudienceId } from "@/lib/jokes";
 import { audienceNames, htmlLang, useLocale, type Messages } from "../locale";
@@ -250,5 +250,29 @@ export function TablePager({ paged }: { paged: ReturnType<typeof usePaged<unknow
         </Pagination.Item>
       </Pagination.Content>
     </Pagination>
+  );
+}
+
+// A compact select for table filters; clearing it falls back to "all".
+export function FilterSelect({ label, value, options, onChange, className = "w-44" }: {
+  label: string; value: string; options: { id: string; label: string }[]; onChange: (value: string) => void; className?: string;
+}) {
+  return (
+    <Select aria-label={label} className={className} value={value} onChange={(next) => onChange(next == null ? "all" : String(next))}>
+      <Select.Trigger>
+        <Select.Value />
+        <Select.Indicator />
+      </Select.Trigger>
+      <Select.Popover>
+        <ListBox>
+          {options.map((option) => (
+            <ListBox.Item key={option.id} id={option.id} textValue={option.label}>
+              {option.label}
+              <ListBox.ItemIndicator />
+            </ListBox.Item>
+          ))}
+        </ListBox>
+      </Select.Popover>
+    </Select>
   );
 }

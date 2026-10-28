@@ -109,3 +109,123 @@ export const mediaLimits = { body: 2000, gloss: 2000, punchline_core: 500, notes
 
 // Fields a superadmin may change on a version. The gloss in the version's own language always equals its body.
 export type MediaUpdate = Pick<MediaItem, "body" | "gloss" | "punchline_core" | "notes">;
+
+export type ChainPurpose = "preview" | "adaptation";
+export type StepKind = "analysis" | "adaptation";
+
+// A prompt chain with its steps (read-only), its mix weight, and what it produced.
+export type PromptChain = {
+  id: number;
+  slug: string;
+  purpose: ChainPurpose;
+  name: string;
+  description: string;
+  created_at: string;
+  weight: number;
+  mix_updated_at: string | null;
+  requests: number;
+  succeeded: number;
+  failed: number;
+  last_used_at: string | null;
+  // Jokes whose current versions this chain wrote, and how readers rated those versions.
+  jokes: number;
+  versions: number;
+  funny: number;
+  not_funny: number;
+  steps: {
+    id: number;
+    position: number;
+    kind: StepKind;
+    name: string;
+    description: string;
+    effort: string;
+    max_tokens: number;
+    model: { id: number; name: string; api_model_id: string; provider: string };
+  }[];
+};
+
+// The prompt each kind of step sends, as the admin area shows it.
+export type StepPrompts = Record<StepKind, string>;
+
+export const mixWeight = { min: 0, max: 100 } as const;
+
+export type GenerationSource = "share" | "explanation" | "admin";
+export type RequestStatus = "pending" | "succeeded" | "unsuitable" | "rejected" | "failed";
+
+export type GenerationRequest = {
+  id: number;
+  purpose: ChainPurpose;
+  source: GenerationSource;
+  chain_id: number | null;
+  chain_name: string | null;
+  user_id: string | null;
+  account_name: string | null;
+  account_email: string | null;
+  joke_id: number | null;
+  input: string;
+  explanation: string | null;
+  locale: AudienceId | null;
+  status: RequestStatus;
+  error: string | null;
+  created_at: string;
+  completed_at: string | null;
+  responses: number;
+  input_tokens: number;
+  output_tokens: number;
+};
+
+export type ResponseStatus = "succeeded" | "refused" | "failed";
+
+// One model call as the list shows it; the prompt and answer load with the detail view.
+export type LlmResponseSummary = {
+  id: number;
+  request_id: number;
+  purpose: ChainPurpose;
+  source: GenerationSource;
+  input: string;
+  chain_name: string | null;
+  step_name: string | null;
+  step_position: number | null;
+  kind: StepKind;
+  model: string;
+  model_name: string | null;
+  effort: string;
+  status: ResponseStatus;
+  http_status: number | null;
+  stop_reason: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_read_input_tokens: number | null;
+  cache_creation_input_tokens: number | null;
+  duration_ms: number;
+  error: string | null;
+  created_at: string;
+};
+
+export type LlmResponseDetail = Omit<LlmResponseSummary, "purpose" | "source" | "input" | "chain_name" | "step_name" | "step_position" | "model_name"> & {
+  step_id: number | null;
+  model_id: number | null;
+  prompt: string;
+  answer: unknown;
+};
+
+// A photo in the avatars bucket and the account that uses it, if any.
+export type AdminImage = {
+  path: string;
+  url: string;
+  size: number | null;
+  content_type: string | null;
+  created_at: string;
+  user_id: string | null;
+  name: string | null;
+  email: string | null;
+  // True when the account shows this photo; false when it switched back to its Google photo.
+  in_use: boolean;
+  google_url: string | null;
+};
+
+// An account a superadmin can upload a photo for.
+export type ImageAccount = { id: string; name: string | null; email: string | null };
+
+// Sign-in is open to every Google account while both access lists are empty.
+export type AccessSummary = { domains: number; emails: number };

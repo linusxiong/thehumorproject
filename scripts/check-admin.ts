@@ -39,9 +39,22 @@ async function sessionCookie(email: string, { emailVerified = true, expired = fa
   return `better-auth.session_token=${encodeURIComponent(`${token}.${await makeSignature(token, secret)}`)}; better-auth.session_data=${encrypted}`;
 }
 
-const pages = ["/admin", "/admin?range=7", "/admin/users", "/admin/media", "/admin/ratings"];
-const apis: [string, string][] = [["/api/admin/media", "GET"], ["/api/admin/media", "POST"], ["/api/admin/media/1", "PATCH"], ["/api/admin/media/1", "DELETE"]];
+const pages = [
+  "/admin", "/admin?range=7", "/admin/users", "/admin/media", "/admin/ratings", "/admin/images", "/admin/requests", "/admin/responses",
+  "/admin/prompt-chains", "/admin/mix", "/admin/terms", "/admin/examples", "/admin/models", "/admin/providers", "/admin/signup-domains", "/admin/whitelist",
+];
+const resourceNames = ["terms", "generation-examples", "llm-models", "llm-providers", "signup-domains", "whitelisted-emails"];
+const apis: [string, string][] = [
+  ["/api/admin/media", "GET"], ["/api/admin/media", "POST"], ["/api/admin/media/1", "PATCH"], ["/api/admin/media/1", "DELETE"],
+  ...resourceNames.flatMap((name): [string, string][] => [
+    [`/api/admin/${name}`, "GET"], [`/api/admin/${name}`, "POST"], [`/api/admin/${name}/1`, "PATCH"], [`/api/admin/${name}/1`, "DELETE"],
+  ]),
+  ["/api/admin/prompt-chain-mix", "GET"], ["/api/admin/prompt-chain-mix", "PATCH"], ["/api/admin/generation-requests/1", "GET"],
+  ["/api/admin/llm-responses/1", "GET"], ["/api/admin/images", "POST"],
+  ["/api/admin/images/00000000-0000-0000-0000-000000000000.jpg", "PATCH"], ["/api/admin/images/00000000-0000-0000-0000-000000000000.jpg", "DELETE"],
+];
 let jokeId: number | null = null;
+let termId: number | null = null;
 
 try {
   // Visitors: every admin page redirects to sign-in, every admin API answers 401, and only the sign-in page renders.
@@ -120,14 +133,43 @@ try {
   assert.equal((await send("/api/admin/media", "POST", admin, { body: "A long enough joke body.", explanation: "no" })).status, 400);
   assert.equal((await send("/api/admin/media", "POST", admin, { body: "A long enough joke body." }, "https://evil.example")).status, 403);
 
+  // Terms round trip through the generic admin API: create, duplicate, invalid, edit, delete.
+  const term = { term: `admin-check-${run}`, language: "en", definition: "A synthetic term for an automated test.", example: "" };
+  const createdTerm = await send("/api/admin/terms", "POST", admin, term);
+  assert.equal(createdTerm.status, 201);
+  termId = (await createdTerm.json() as { id: number; example: string | null }).id;
+  assert.equal((await send("/api/admin/terms", "POST", admin, { ...term, term: term.term.toUpperCase() })).status, 409, "Terms are unique per language, ignoring case");
+  assert.equal((await send("/api/admin/terms", "POST", admin, { ...term, language: "fr" })).status, 400);
+  assert.equal((await send("/api/admin/terms", "POST", admin, term, "https://evil.example")).status, 403);
+  assert.equal((await send("/api/admin/not-a-resource", "GET", admin)).status, 404);
+  const editedTerm = await send(`/api/admin/terms/${termId}`, "PATCH", admin, { ...term, definition: "Edited.", example: "An example." });
+  assert.equal(editedTerm.status, 200);
+  assert.deepEqual(await editedTerm.json().then((value: { definition: string; example: string }) => [value.definition, value.example]), ["Edited.", "An example."]);
+  assert.ok((await (await send("/api/admin/terms", "GET", admin)).json() as { id: number }[]).some((item) => item.id === termId));
+  assert.equal((await send(`/api/admin/terms/${termId}`, "DELETE", admin)).status, 200);
+  assert.equal((await send(`/api/admin/terms/${termId}`, "DELETE", admin)).status, 404);
+  termId = null;
+
+  // Models a chain step runs on cannot be deleted; the mix keeps an active chain for every purpose.
+  const models = await (await send("/api/admin/llm-models", "GET", admin)).json() as { id: number; steps: { count: number }[] }[];
+  const usedModel = models.find((item) => (item.steps[0]?.count ?? 0) > 0);
+  if (usedModel) assert.equal((await send(`/api/admin/llm-models/${usedModel.id}`, "DELETE", admin)).status, 409);
+  const mix = await (await send("/api/admin/prompt-chain-mix", "GET", admin)).json() as { chainId: number; purpose: string; weight: number }[];
+  assert.ok(mix.length > 0);
+  assert.equal((await send("/api/admin/prompt-chain-mix", "PATCH", admin, { weights: mix.map(({ chainId }) => ({ chainId, weight: 0 })) })).status, 422);
+  assert.equal((await send("/api/admin/prompt-chain-mix", "PATCH", admin, { weights: [{ chainId: mix[0].chainId, weight: 101 }] })).status, 400);
+  const unchanged = await send("/api/admin/prompt-chain-mix", "PATCH", admin, { weights: mix.map(({ chainId, weight }) => ({ chainId, weight })) });
+  assert.equal(unchanged.status, 200);
+
   // Revoking the flag takes effect on the very next request.
   await client.from("user_profiles").update({ is_superadmin: false }).eq("user_id", adminId);
   expectLogin(await request("/admin", { headers: { cookie: admin } }), "/admin after revocation");
   assert.equal((await send("/api/admin/media", "GET", admin)).status, 403);
 
   console.log("PASS: Admin sign-in page, visitor/forged/tampered/expired/member/unverified denial on every admin page and API, superadmin pages, "
-    + "media list, edit validation and CSRF, edit, delete, create validation, and immediate revocation.");
+    + "media list, edit validation and CSRF, edit, delete, create validation, terms round trip, models in use, mix validation, and immediate revocation.");
 } finally {
   if (jokeId !== null) await client.from("jokes").delete().eq("id", jokeId);
+  if (termId !== null) await client.from("terms").delete().eq("id", termId);
   await client.from("user_profiles").delete().eq("user_id", adminId);
 }
