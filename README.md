@@ -195,28 +195,36 @@ The sidebar groups the pages: Overview (Dashboard); Community (Users, Ratings, I
 
 ### AI configuration
 
-Every AI request the site makes (the punchline preview, sharing, community explanations, and admin generation; not imports) runs a **prompt chain**. A chain serves one purpose, the punchline preview or the adaptation, and runs its steps in order; each step names its kind (`analysis` or `adaptation`), model, effort, and output limit. The prompt text stays in `lib/claude.ts`; the Prompt chains page shows it for each step. Chains and steps are defined by migrations and are read-only in the app. The migration seeds:
+Every AI request the site makes (the punchline preview, sharing, community explanations, and admin generation; not imports) runs a **prompt chain**. A chain serves one purpose, the punchline preview or the adaptation, and runs its steps in order; each step names its kind (`analysis` or `adaptation`), prompt, model, effort, and output limit. Prompts live in `prompt_chain_steps` and are edited in Punchline Studio (see below); an analysis prompt writes `{{language}}` where the reader's language goes, and the app fills it in per request. `lib/claude.ts` keeps the answer formats, which cannot be edited, and the built-in prompts the site falls back on when the database is out of reach. The Prompt chains page shows every chain with its stored prompt and links to Studio. The seeded chains:
 
 - **Punchline preview**: one analysis step (Claude Haiku 5.5, `medium`).
 - **Direct adaptation**: one adaptation step (Claude Haiku 5.5, `medium`); the earlier behavior.
 - **Careful adaptation**: the same step at `high` effort; slower and more expensive.
 - **Read first, then adapt**: when nobody explained the joke, an analysis step first works out the punchline in English and the adaptation follows that reading. A human explanation replaces the reading step, and the chain's own reading is never rejected as an explanation or stored on the joke.
 
-The **chain mix** gives each chain a weight from 0 to 100. Each request picks one chain of its purpose at random, weighted by the mix; 0 turns a chain off, and every purpose keeps at least one chain above 0 (`set_prompt_chain_mix` enforces it). Preview and Direct adaptation start at 100, the others at 0. The mix page shows each chain's requests and how readers rated the versions it wrote (a joke's versions belong to the chain of its latest successful adaptation request), so chains can be compared before shifting weights.
+The **chain mix** gives each chain a weight from 0 to 100. Each request picks one chain of its purpose at random, weighted by the mix; 0 turns a chain off, every purpose keeps at least one chain above 0, and only a chain whose steps the site can run can go above 0 (`set_prompt_chain_mix` enforces both). Preview and Direct adaptation start at 100, the others at 0. The mix page shows each chain's requests and how readers rated the versions it wrote (a joke's versions belong to the chain of its latest successful adaptation request), so chains can be compared before shifting weights.
 
 **LLM models** map a display name to the API model ID a step sends; editing a model's API ID changes every step that uses it on the next request, and a model a step uses, or a provider with models, cannot be deleted (409). Every step is sent to the Anthropic Messages API, so other providers are kept for reference only.
 
 **Terms** form a glossary of culture-specific slang, references, and sound-alikes. When a joke contains a term (any case; English and Spanish terms as whole words), up to 20 matching entries are sent after the joke in `<glossary>` tags, for previews and adaptations, and the system prompt notes that the glossary is reference data that never overrides an explanation. **Generation examples** are reference adaptations: a joke in its original language, its versions for the other two cultures, and optionally why it is funny and why the adaptation works. The ten newest are added to the adaptation system prompt in `<examples>` tags. Without terms or examples, the prompts are unchanged.
 
-`lib/generation.ts` loads the chains, matching terms, and examples with one `ai_generation_context` call. If the database is not configured or the migration is not applied yet, it runs the built-in defaults, so deploying the code before the migration is safe.
+`lib/generation.ts` loads the chains, matching terms, and examples with one `ai_generation_context` call. If the database is not configured or out of reach, it runs the built-in defaults.
 
 The simple tables share one API: `GET`/`POST /api/admin/[resource]` and `PATCH`/`DELETE /api/admin/[resource]/[id]` for `terms`, `generation-examples`, `llm-models`, `llm-providers`, `signup-domains`, and `whitelisted-emails`. `lib/admin-resources.ts` defines each table and validates every field for both the forms and the Route Handlers; duplicates and rows still in use answer 409. `GET`/`PATCH /api/admin/prompt-chain-mix` (body `{ weights: [{ chainId, weight }] }`) reads and replaces the mix.
 
-### Media chains
+### Punchline Studio
 
-[Punchline Studio](https://punchlinestudio.vercel.app) is a separate superadmin tool on this database for building prompt chains and generating media from them. Its chains share `prompt_chains` and `prompt_chain_steps` under the purpose `media`, and their steps have the kind `prompt`: unlike preview and adaptation chains, whose prompts live in `lib/claude.ts`, each step keeps its prompt in the table. The site never runs them, and the Prompt chains and Chain mix pages do not list them.
+[Punchline Studio](https://punchlinestudio.vercel.app) is a separate superadmin tool on this database for building prompt chains. It creates, copies, edits, and tests chains; the mix here decides which ones the site uses.
 
-The server key still has read-only access to both tables. Studio changes chains only through the `studio_*` functions, which run as their owner and refuse any chain that is not a media chain, so the chains the site runs keep changing only through migrations. Runs are logged in `generation_requests` (purpose `media`, source `studio`) and `llm_responses` (kind `prompt`), and appear on those pages. Finished runs are stored in `chain_media` as a snapshot of every step's output, with any image in the private `chain-media` bucket.
+1. Copy a chain or create one, and edit its prompts in Studio. A new chain has no weight, so the site ignores it.
+2. Test it on a joke. Studio calls `POST /api/studio/test-run` with `STUDIO_API_SECRET`, a server-only secret both apps share. The route names its chain instead of picking from the mix and runs the same pipeline readers get, but publishes nothing and never falls back to a built-in prompt.
+3. Give it a weight on the Chain mix page. Requests start picking it, and Studio shows the jokes it writes with their ratings.
+
+A chain above weight 0 is **live**, and its steps are locked: to change one, copy it, test the copy, and move the weight across. Moving the weight back is the rollback, and it keeps each chain's prompts fixed while readers rate its versions. The server key has read-only access to `prompt_chains` and `prompt_chain_steps`; Studio changes them only through the `studio_*` functions, which enforce these rules.
+
+A preview chain is one `analysis` step, and an adaptation chain is an `adaptation` step, optionally after an `analysis` step. Studio also has **media chains** (purpose `media`, kind `prompt`): free-form steps from an image or text that run only there, using its own runner. The site never runs them and the mix never lists them.
+
+Runs are logged in `generation_requests` (source `studio`) and `llm_responses`, and appear on those pages; test runs stay out of each chain's request counts, so those numbers only compare what chains did for readers. Studio stores finished runs in `chain_media`, with any image in the private `chain-media` bucket.
 
 ### AI requests and responses
 
