@@ -1,4 +1,4 @@
-import { adminRequest, fail, loadPromptChains, noStore } from "@/lib/admin";
+import { adminRequest, fail, loadMixChains, noStore } from "@/lib/admin";
 import { mixWeight } from "@/lib/admin-types";
 
 // The prompt chain mix: GET returns every chain with its weight, PATCH replaces the weights.
@@ -7,7 +7,7 @@ export async function GET(request: Request) {
   try {
     const admin = await adminRequest(request);
     if (admin instanceof Response) return admin;
-    const chains = await loadPromptChains(admin.client);
+    const chains = await loadMixChains(admin.client);
     return Response.json(chains.map(({ id, purpose, name, weight, mix_updated_at: updatedAt }) => ({ chainId: id, purpose, name, weight, updatedAt })),
       { headers: noStore });
   } catch (error) {
@@ -31,6 +31,8 @@ export async function PATCH(request: Request) {
     }).abortSignal(AbortSignal.timeout(15_000));
     if (error?.code === "23503") return fail("Unknown prompt chain.", 404);
     if (error?.code === "23514") return fail("Each purpose needs at least one chain with a weight above 0.", 422);
+    // CH003: a chain whose steps the site cannot run yet.
+    if (error?.code === "CH003") return fail("A chain needs ready steps before it can have a weight.", 409);
     if (error) throw error;
     return GET(request);
   } catch (error) {

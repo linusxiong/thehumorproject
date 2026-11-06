@@ -152,6 +152,11 @@ export async function loadPromptChains(client: SupabaseClient): Promise<PromptCh
   return (data ?? []) as PromptChain[];
 }
 
+// What the mix can weigh: every chain except media chains, which the site never runs.
+export async function loadMixChains(client: SupabaseClient): Promise<PromptChain[]> {
+  return (await loadPromptChains(client)).filter((chain) => chain.purpose !== "media");
+}
+
 export async function loadGenerationRequests(client: SupabaseClient): Promise<GenerationRequest[]> {
   const { data, error } = await client.rpc("admin_generation_requests", { p_limit: 1000 }).abortSignal(timeout());
   if (error) throw error;

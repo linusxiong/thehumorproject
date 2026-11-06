@@ -112,15 +112,20 @@ export type MediaUpdate = Pick<MediaItem, "body" | "gloss" | "punchline_core" | 
 
 export type ChainPurpose = "preview" | "adaptation";
 export type StepKind = "analysis" | "adaptation";
-// The request logs also hold runs of Punchline Studio's media chains, which the chain pages and the mix never list.
+// Punchline Studio's media chains share the tables and logs but never join the mix: the site does not run them.
 export type RequestPurpose = ChainPurpose | "media";
 export type ResponseKind = StepKind | "prompt";
 
-// A prompt chain with its steps (read-only), its mix weight, and what it produced.
+// Where chains are built and edited. The admin area shows them; Punchline Studio changes them.
+export const studioUrl = "https://punchlinestudio.vercel.app";
+
+// A prompt chain with its steps, its mix weight, and what it produced. runnable: its steps fit its purpose, so the mix
+// may give it a weight. Media chains are never runnable here: only Studio runs them.
 export type PromptChain = {
   id: number;
   slug: string;
-  purpose: ChainPurpose;
+  purpose: RequestPurpose;
+  runnable: boolean;
   name: string;
   description: string;
   created_at: string;
@@ -138,17 +143,15 @@ export type PromptChain = {
   steps: {
     id: number;
     position: number;
-    kind: StepKind;
+    kind: ResponseKind;
     name: string;
-    description: string;
+    description: string | null;
+    prompt: string;
     effort: string;
     max_tokens: number;
     model: { id: number; name: string; api_model_id: string; provider: string };
   }[];
 };
-
-// The prompt each kind of step sends, as the admin area shows it.
-export type StepPrompts = Record<StepKind, string>;
 
 export const mixWeight = { min: 0, max: 100 } as const;
 

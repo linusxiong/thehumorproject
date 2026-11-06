@@ -6,33 +6,34 @@ import {
 import { isAudienceId, type AudienceId } from "@/lib/jokes";
 
 // Server-only runner for the app's AI requests. It picks a prompt chain from the mix configured in the admin area,
-// runs its steps with the glossary and reference examples, and logs the request and every model call.
-// Without the configuration (no database, or the migration is not applied yet) it runs the built-in defaults,
-// and logging never fails a member's request.
+// runs its steps with their stored prompts, the glossary, and reference examples, and logs the request and every
+// model call. Without the configuration (no database, or the migration is not applied yet) it runs the built-in
+// defaults, and logging never fails a member's request. Punchline Studio's test runs name a chain instead of
+// picking one, whatever its weight, and never fall back: a test has to run the chain it asked for.
 
-export type GenerationSource = "share" | "explanation" | "admin";
+export type GenerationSource = "share" | "explanation" | "admin" | "studio";
 type Purpose = "preview" | "adaptation";
-type Step = { id: number | null; kind: "analysis" | "adaptation"; modelId: number | null; model: string; effort: Effort; maxTokens: number };
-type Chain = { id: number | null; weight: number; steps: Step[] };
+type Step = { id: number | null; kind: "analysis" | "adaptation"; modelId: number | null; model: string; prompt: string | null; effort: Effort; maxTokens: number };
+type Chain = { id: number | null; weight: number; runnable: boolean; steps: Step[] };
 type Context = { chain: Chain; glossary: GlossaryEntry[]; examples: ReferenceExample[] };
 
 const efforts: readonly Effort[] = ["low", "medium", "high", "xhigh", "max"];
 const defaultSteps: Record<Purpose, Step> = {
-  preview: { id: null, kind: "analysis", modelId: null, model: claudeModel, effort: "medium", maxTokens: 8_000 },
-  adaptation: { id: null, kind: "adaptation", modelId: null, model: claudeModel, effort: "medium", maxTokens: 16_000 },
+  preview: { id: null, kind: "analysis", modelId: null, model: claudeModel, prompt: null, effort: "medium", maxTokens: 8_000 },
+  adaptation: { id: null, kind: "adaptation", modelId: null, model: claudeModel, prompt: null, effort: "medium", maxTokens: 16_000 },
 };
-const fallback = (purpose: Purpose): Context => ({ chain: { id: null, weight: 1, steps: [defaultSteps[purpose]] }, glossary: [], examples: [] });
+const fallback = (purpose: Purpose): Context => ({ chain: { id: null, weight: 1, runnable: true, steps: [defaultSteps[purpose]] }, glossary: [], examples: [] });
 const logTimeout = () => AbortSignal.timeout(5_000);
 const clip = (value: string, max: number) => (value.length > max ? `${value.slice(0, max - 1)}…` : value);
 const message = (error: unknown) => clip(error instanceof Error ? error.message : String(error), 500) || "Unknown error.";
 
 function readStep(value: unknown): Step | null {
-  const step = value as { id?: unknown; kind?: unknown; model_id?: unknown; model?: unknown; effort?: unknown; max_tokens?: unknown } | null;
+  const step = value as { id?: unknown; kind?: unknown; model_id?: unknown; model?: unknown; prompt?: unknown; effort?: unknown; max_tokens?: unknown } | null;
   if (!step || (step.kind !== "analysis" && step.kind !== "adaptation") || typeof step.model !== "string" || !step.model) return null;
   if (!efforts.includes(step.effort as Effort) || !Number.isSafeInteger(step.max_tokens)) return null;
   return {
     id: Number.isSafeInteger(step.id) ? step.id as number : null, kind: step.kind, modelId: Number.isSafeInteger(step.model_id) ? step.model_id as number : null,
-    model: step.model, effort: step.effort as Effort, maxTokens: step.max_tokens as number,
+    model: step.model, prompt: typeof step.prompt === "string" && step.prompt ? step.prompt : null, effort: step.effort as Effort, maxTokens: step.max_tokens as number,
   };
 }
 
@@ -56,10 +57,15 @@ export function matchGlossary(text: string, terms: GlossaryEntry[]) {
   }).slice(0, 20);
 }
 
-async function loadContext(client: SupabaseClient | null, purpose: Purpose, text: string): Promise<Context> {
-  if (!client) return fallback(purpose);
+async function loadContext(client: SupabaseClient | null, purpose: Purpose, text: string, chainId?: number): Promise<Context> {
+  const pinned = chainId !== undefined;
+  if (!client) {
+    if (pinned) throw new Error("A test run needs the database.");
+    return fallback(purpose);
+  }
   const { data, error } = await client.rpc("ai_generation_context", { p_purpose: purpose, p_text: text }).abortSignal(logTimeout());
   if (error || !data) {
+    if (pinned) throw new Error(`The chain could not be loaded: ${error?.message ?? "no configuration"}`);
     console.error("Using the default prompt chain:", error?.message ?? "no configuration");
     return fallback(purpose);
   }
@@ -67,15 +73,18 @@ async function loadContext(client: SupabaseClient | null, purpose: Purpose, text
   const chains = (raw.chains ?? []).map((value) => {
     const chain = value as { id?: unknown; weight?: unknown; steps?: unknown[] };
     const steps = (chain.steps ?? []).map(readStep);
+    const runnable = steps.every(Boolean);
     return {
       id: Number.isSafeInteger(chain.id) ? chain.id as number : null,
       // A chain with a step the app cannot run is skipped rather than run partially.
-      weight: steps.every(Boolean) && Number.isSafeInteger(chain.weight) ? chain.weight as number : 0,
+      weight: runnable && Number.isSafeInteger(chain.weight) ? chain.weight as number : 0,
+      runnable,
       steps: steps.filter((step): step is Step => step !== null),
     };
   });
-  const chain = pickChain(chains);
+  const chain = pinned ? chains.find((candidate) => candidate.id === chainId && candidate.runnable && candidate.steps.length > 0) : pickChain(chains);
   if (!chain) {
+    if (pinned) throw new Error("This chain cannot run yet.");
     console.error(`No active ${purpose} chain; using the default.`);
     return fallback(purpose);
   }
@@ -136,30 +145,37 @@ async function runStep<T extends { suitable: boolean }>(log: Log, step: Step, pa
   }
 }
 
-type Who = { client: SupabaseClient | null; userId: string | null; source: GenerationSource; signal?: AbortSignal };
+// chainId runs that chain instead of picking one from the mix.
+type Who = { client: SupabaseClient | null; userId: string | null; source: GenerationSource; signal?: AbortSignal; chainId?: number };
 
-// The punchline preview a member confirms or corrects before sharing, in their interface language.
-export async function previewJoke(who: Who, joke: string, locale: AudienceId): Promise<AnalysisResult> {
-  const context = await loadContext(who.client, "preview", joke);
+// The preview and the request it logged.
+export async function runPreview(who: Who, joke: string, locale: AudienceId): Promise<{ result: AnalysisResult; requestId: number | null }> {
+  const context = await loadContext(who.client, "preview", joke, who.chainId);
   const step = context.chain.steps.find((candidate) => candidate.kind === "analysis") ?? defaultSteps.preview;
   const log = await openRequest(who.client, { purpose: "preview", source: who.source, chain_id: context.chain.id, user_id: who.userId, input: joke, locale });
   try {
-    const params = analysisParams(joke, locale, step.effort, { model: step.model, maxTokens: step.maxTokens, glossary: context.glossary });
+    const params = analysisParams(joke, locale, step.effort, { model: step.model, maxTokens: step.maxTokens, prompt: step.prompt, glossary: context.glossary });
     const result = await runStep(log, step, params, parseAnalysis, who.signal);
     await closeRequest(log, { status: result.suitable ? "succeeded" : "unsuitable" });
-    return result;
+    return { result, requestId: log.requestId };
   } catch (error) {
     await closeRequest(log, { status: "failed", error: message(error) });
     throw error;
   }
 }
 
-export type Adaptation = { result: AdaptationResult; requestId: number | null; client: SupabaseClient | null };
+// The punchline preview a member confirms or corrects before sharing, in their interface language.
+export async function previewJoke(who: Who, joke: string, locale: AudienceId): Promise<AnalysisResult> {
+  return (await runPreview(who, joke, locale)).result;
+}
+
+// reading is what the chain's own analysis step concluded, when one ran.
+export type Adaptation = { result: AdaptationResult; requestId: number | null; client: SupabaseClient | null; reading: string | null };
 
 // The three cultural versions of a joke. A chain may first read the punchline itself; a human explanation
 // (from the author or a community member) is authoritative and replaces that reading step.
 export async function adaptJoke(who: Who & { jokeId?: number }, joke: string, explanation?: string): Promise<Adaptation> {
-  const context = await loadContext(who.client, "adaptation", joke);
+  const context = await loadContext(who.client, "adaptation", joke, who.chainId);
   const log = await openRequest(who.client, {
     purpose: "adaptation", source: who.source, chain_id: context.chain.id, user_id: who.userId, joke_id: who.jokeId ?? null,
     input: joke, explanation: explanation || null,
@@ -169,7 +185,7 @@ export async function adaptJoke(who: Who & { jokeId?: number }, joke: string, ex
     let ownReading = false;
     let result: AdaptationResult | null = null;
     for (const step of context.chain.steps) {
-      const options = { model: step.model, maxTokens: step.maxTokens, glossary: context.glossary };
+      const options = { model: step.model, maxTokens: step.maxTokens, prompt: step.prompt, glossary: context.glossary };
       if (step.kind === "analysis") {
         if (reading) continue;
         const analysis = await runStep(log, step, analysisParams(joke, "en", step.effort, options), parseAnalysis, who.signal);
@@ -188,7 +204,7 @@ export async function adaptJoke(who: Who & { jokeId?: number }, joke: string, ex
     // The chain's own reading is not a member's explanation, so it can never be rejected as one.
     if (result.suitable && ownReading) result = { ...result, explanationAccepted: true };
     await closeRequest(log, { status: !result.suitable ? "unsuitable" : result.explanationAccepted ? "succeeded" : "rejected" });
-    return { result, requestId: log.requestId, client: log.client };
+    return { result, requestId: log.requestId, client: log.client, reading: ownReading ? reading ?? null : null };
   } catch (error) {
     await closeRequest(log, { status: "failed", error: message(error) });
     throw error;
