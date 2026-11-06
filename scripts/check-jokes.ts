@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { makeSignature, symmetricEncodeJWT } from "better-auth/crypto";
+import { adaptationParams, analysisParams, builtInPrompts, languagePlaceholder } from "../lib/claude";
 import type { Joke } from "../lib/jokes";
 
 // Exercise the real joke routes and encrypted sessions with isolated database and Claude stubs.
@@ -16,12 +18,14 @@ Object.assign(process.env, {
   NEXT_PUBLIC_SUPABASE_URL: "https://jokes.example.test",
   SUPABASE_SECRET_KEY: "sb_secret_test_only",
   ANTHROPIC_API_KEY: apiKey,
+  STUDIO_API_SECRET: "studio-check-only-secret",
 });
 // Import after setting env: lib/auth.ts validates its configuration at module load.
 const jokesRoute = await import("../app/api/jokes/route");
 const ratingsRoute = await import("../app/api/joke-ratings/route");
 const analyzeRoute = await import("../app/api/jokes/analyze/route");
 const explanationsRoute = await import("../app/api/joke-explanations/route");
+const testRunRoute = await import("../app/api/studio/test-run/route");
 const digest = (email: string) => createHash("sha256").update(email).digest("hex");
 const userId = digest("joke-check@example.com");
 const limitedId = digest("limited@example.com");
@@ -71,7 +75,7 @@ let nextAdaptationId = 1000;
 
 // ai_generation_context stand-in: the prompt chains the access migration seeds (null: the migration is not applied),
 // glossary terms, and reference examples; plus the generation_requests and llm_responses logs the routes write.
-type ChainStep = { id: number; position: number; kind: "analysis" | "adaptation"; model_id: number; model: string; effort: string; max_tokens: number };
+type ChainStep = { id: number; position: number; kind: "analysis" | "adaptation"; model_id: number; model: string; prompt?: string | null; effort: string; max_tokens: number };
 const chainStep = (id: number, position: number, kind: ChainStep["kind"], model = "claude-haiku-5-5", effort = "medium"): ChainStep =>
   ({ id, position, kind, model_id: 1, model, effort, max_tokens: kind === "analysis" ? 8_000 : 16_000 });
 const seededChains = () => ({
@@ -92,6 +96,8 @@ let expectedModel = "claude-haiku-5-5";
 let expectedEffort = "medium";
 let expectedGlossary: string | null = null;
 let expectedExamples = false;
+// The system prompt a request should start with, when a chain stores its own.
+let expectedSystem: string | null = null;
 const withGlossary = (content: string) => (expectedGlossary === null ? content : `${content}\n<glossary>\n${expectedGlossary}\n</glossary>`);
 
 function feed(viewer: string | null, jokeId: number | null, limit: number) {
@@ -137,6 +143,7 @@ function claude(init: RequestInit | undefined) {
   assert.equal(request.output_config.format.type, "json_schema");
   assert.match(request.system, /Punchline Passport/);
   assert.match(request.system, /上来自己动/, "The prompt teaches hidden homophones and innuendo");
+  if (expectedSystem !== null) assert.ok(request.system.startsWith(expectedSystem), "A chain's stored prompt replaces the built-in one");
   assert.equal(request.messages.length, 1);
   if (analysis) {
     assert.deepEqual(schema.required, ["suitable", "source_language", "adult", "punchline"]);
@@ -263,6 +270,11 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
         terms: glossary.filter((entry) => text.includes(entry.term.toLowerCase())),
         examples,
       });
+    }
+    case "/rest/v1/prompt_chains": {
+      const purposes: Record<string, string> = { 1: "preview", 2: "adaptation", 3: "adaptation", 4: "adaptation", 9: "media" };
+      const id = value("id") ?? "";
+      return Response.json(purposes[id] ? [{ purpose: purposes[id] }] : []);
     }
     case "/rest/v1/generation_requests": {
       if (init?.method === "PATCH") {
@@ -664,6 +676,72 @@ try {
   assert.deepEqual(llmResponses.filter((row) => row.request_id === chainLog[0].id).map((row) => [row.step_id, row.kind, row.model, row.effort]),
     [[4, "analysis", "claude-sonnet-5-5", "high"], [5, "adaptation", "claude-sonnet-5-5", "high"]]);
   expectedExplanation = null;
+
+  // Moving the prompts into the database changes nothing readers get: the migration holds the built-in prompts byte for
+  // byte, and a request built from a stored copy equals one built from the code, in every language.
+  chains = seededChains();
+  expectedModel = "claude-haiku-5-5";
+  expectedEffort = "medium";
+  const migration = readFileSync(new URL("../supabase/migrations/202611060002_site_chains_in_studio.sql", import.meta.url), "utf8");
+  for (const [kind, text] of Object.entries(builtInPrompts)) assert.ok(migration.includes(`$prompt$${text}$prompt$`), `The ${kind} prompt was copied exactly`);
+  assert.ok(builtInPrompts.analysis.includes(languagePlaceholder));
+  for (const locale of ["en", "es", "zh"] as const) {
+    assert.deepEqual(analysisParams(joke, locale, "medium", { prompt: builtInPrompts.analysis }), analysisParams(joke, locale));
+  }
+  assert.deepEqual(adaptationParams(joke, "medium", undefined, { prompt: builtInPrompts.adaptation }), adaptationParams(joke));
+
+  // A chain's stored prompt replaces the built-in one, with the reader's language filled in for analyses.
+  const storedAnalysis = `Punchline Passport reads 上来自己动 in ${languagePlaceholder}, always.`;
+  const storedAdaptation = "Punchline Passport adapts 上来自己动 with care.";
+  chains.preview[0].steps[0].prompt = storedAnalysis;
+  chains.adaptation[0].steps[0].prompt = storedAdaptation;
+  expectedLanguage = "Spanish";
+  expectedSystem = "Punchline Passport reads 上来自己动 in Spanish, always.";
+  assert.equal((await analyze({ body: joke, locale: "es" }, chainMember)).status, 200);
+  expectedLanguage = "English";
+  expectedSystem = storedAdaptation;
+  assert.equal((await share({ body: joke }, chainMember)).status, 201);
+  expectedSystem = null;
+  chains = seededChains();
+
+  // Punchline Studio's test runs go through the same pipeline, name their chain whatever its weight, and publish nothing.
+  const testRun = (body: unknown, authorization: string | null = "Bearer studio-check-only-secret") => testRunRoute.POST(new Request(`${origin}/api/studio/test-run`, {
+    method: "POST", headers: { "content-type": "application/json", ...(authorization ? { authorization } : {}) }, body: JSON.stringify(body),
+  }));
+  const run = { chainId: 4, text: joke, locale: "en", userId };
+  assert.equal((await testRun(run, null)).status, 401);
+  assert.equal((await testRun(run, "Bearer wrong")).status, 401);
+  for (const invalid of [{ ...run, chainId: "4" }, { ...run, text: " " }, { ...run, text: "x".repeat(2001) }, { ...run, locale: "fr" }, { ...run, userId: "" }, { ...run, explanation: "no" }]) {
+    assert.equal((await testRun(invalid)).status, 400, JSON.stringify(invalid).slice(0, 60));
+  }
+  assert.equal((await testRun({ ...run, chainId: 9 })).status, 404, "Media chains do not run on the site");
+  assert.equal((await testRun({ ...run, chainId: 77 })).status, 404);
+  const jokesBeforeTest = jokes.length;
+  const requestsBeforeTest = claudeRequests;
+  expectedExplanation = "We hear a pun.";
+  const adaptationTest = await testRun(run);
+  expectedExplanation = null;
+  assert.equal(adaptationTest.status, 200);
+  const tested = await adaptationTest.json() as { requestId: number; reading: string; result: { suitable: boolean; adaptations: { audience: string }[] } };
+  assert.equal(claudeRequests - requestsBeforeTest, 2, "A chain with weight 0 runs both of its steps");
+  assert.equal(tested.reading, "We hear a pun.");
+  assert.deepEqual(tested.result.adaptations.map((item) => item.audience), ["en", "es", "zh"]);
+  assert.equal(jokes.length, jokesBeforeTest, "A test run publishes nothing");
+  const testLog = generationRequests.find((row) => row.id === tested.requestId)!;
+  assert.deepEqual([testLog.source, testLog.chain_id, testLog.user_id, testLog.joke_id, testLog.status], ["studio", 4, userId, null, "succeeded"]);
+  const previewTest = await testRun({ ...run, chainId: 1 });
+  assert.equal(previewTest.status, 200);
+  assert.equal((await previewTest.json() as { reading: string }).reading, "We hear a pun.");
+  claudeMode = "error";
+  assert.equal((await testRun(run)).status, 502, "A failed test run says so instead of falling back");
+  claudeMode = "ok";
+  const seeded = chains;
+  chains = null;
+  assert.equal((await testRun(run)).status, 502, "A test never falls back to the built-in chain");
+  chains = seeded;
+  Reflect.deleteProperty(process.env, "STUDIO_API_SECRET");
+  assert.equal((await testRun(run)).status, 401, "Without a configured secret nothing gets in");
+  process.env.STUDIO_API_SECRET = "studio-check-only-secret";
 
   // Before the migration is applied, requests run the built-in defaults; a failing log never fails a member.
   chains = null;
