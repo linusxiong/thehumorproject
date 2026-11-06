@@ -1,10 +1,10 @@
 "use client";
 
 import { ArrowRotateLeft, FloppyDisk } from "@gravity-ui/icons";
-import { Alert, Button, Card, Meter, NumberField, Spinner, Table, Typography, toast } from "@heroui/react";
+import { Alert, Button, Card, Link, Meter, NumberField, Spinner, Table, Typography, toast } from "@heroui/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { mixWeight, type ChainPurpose, type PromptChain } from "@/lib/admin-types";
+import { mixWeight, studioUrl, type ChainPurpose, type PromptChain } from "@/lib/admin-types";
 import { useLocale, type Messages } from "../locale";
 import { NoResults, PageHeading, plural, RatingCounts, TimeText, useFormat } from "./admin-ui";
 import { Failure, requestStatus, sendJson } from "./resource-manager";
@@ -19,8 +19,11 @@ const en = {
     "Each AI request picks one chain of its purpose at random, weighted by these numbers.",
     "A weight of 0 turns a chain off. Each purpose needs at least one chain above 0.",
     "A joke's versions count toward the chain of its latest successful adaptation, so the still-funny rates compare chains side by side.",
+    "A chain above 0 is live and its steps are locked in Punchline Studio. To change one, copy it, test the copy, and move the weight across.",
   ],
   purposes: { preview: "Punchline preview", adaptation: "Adaptation" } as Record<ChainPurpose, string>,
+  notReady: "Steps incomplete",
+  finishInStudio: "Finish in Studio",
   table: (purpose: string) => `${purpose} chains`,
   chain: "Chain",
   steps: (count: string) => plural(count, "step", "steps"),
@@ -49,6 +52,7 @@ const en = {
     401: "Your session has expired. Sign in again.",
     403: "Only superadmins can do this.",
     404: "A chain no longer exists. Refresh the page.",
+    409: "A chain needs ready steps before it can have a weight.",
     422: "Each purpose needs at least one chain with a weight above 0.",
   } as Partial<Record<number, string>>,
   genericError: "Something went wrong. Please try again.",
@@ -67,8 +71,11 @@ const messages: Messages<Text> = {
       "Cada solicitud de IA elige al azar una cadena de su propósito, ponderada por estos números.",
       "Un peso de 0 desactiva la cadena. Cada propósito necesita al menos una cadena por encima de 0.",
       "Las versiones de un chiste cuentan para la cadena de su última adaptación correcta, así que los porcentajes de «sigue siendo gracioso» comparan las cadenas entre sí.",
+      "Una cadena por encima de 0 está activa y sus pasos quedan bloqueados en Punchline Studio. Para cambiarla, cópiala, prueba la copia y pásale el peso.",
     ],
     purposes: { preview: "Vista previa del remate", adaptation: "Adaptación" },
+    notReady: "Pasos incompletos",
+    finishInStudio: "Terminar en Studio",
     table: (purpose) => `Cadenas de ${purpose.toLocaleLowerCase("es")}`,
     chain: "Cadena",
     steps: (count) => plural(count, "paso", "pasos"),
@@ -97,6 +104,7 @@ const messages: Messages<Text> = {
       401: "Tu sesión expiró. Vuelve a iniciar sesión.",
       403: "Solo los superadministradores pueden hacer esto.",
       404: "Una cadena ya no existe. Actualiza la página.",
+      409: "Una cadena necesita pasos completos antes de tener un peso.",
       422: "Cada propósito necesita al menos una cadena con un peso mayor que 0.",
     },
     genericError: "Algo salió mal. Inténtalo de nuevo.",
@@ -110,8 +118,11 @@ const messages: Messages<Text> = {
       "每个 AI 请求会按这些权重，从同一用途的链中随机选择一条。",
       "权重为 0 表示关闭该链。每种用途至少需要一条权重大于 0 的链。",
       "笑话的版本会计入它最近一次成功改编所用的链，因此可以直接比较各条链的“依然好笑”比例。",
+      "权重大于 0 的链已上线，它的步骤在 Punchline Studio 中被锁定。要修改，请复制一份，测试后再把权重移过去。",
     ],
     purposes: { preview: "笑点预览", adaptation: "改编" },
+    notReady: "步骤未完成",
+    finishInStudio: "到 Studio 完成",
     table: (purpose) => `${purpose}链`,
     chain: "链",
     steps: (count) => `${count} 个步骤`,
@@ -140,6 +151,7 @@ const messages: Messages<Text> = {
       401: "登录已过期，请重新登录。",
       403: "只有超级管理员可以执行此操作。",
       404: "某条链已不存在，请刷新页面。",
+      409: "链的步骤完成后才能设置权重。",
       422: "每种用途至少需要一条权重大于 0 的链。",
     },
     genericError: "出了点问题，请重试。",
@@ -267,23 +279,29 @@ function MixTable({ purpose, chains, weights, total, pending, onChange, t }: {
                 : [<Table.Column key="used">{t.lastUsed}</Table.Column>]),
             ]}
           </Table.Header>
-          <Table.Body items={chains}>
-            {(chain) => {
+          {/* Mapped rather than passed as items: a dynamic collection caches rows, which would keep old weights and callbacks. */}
+          <Table.Body>
+            {chains.map((chain) => {
               const weight = weights[chain.id];
               const share = validWeight(weight) && total > 0 ? weight / total : 0;
               const rated = chain.funny + chain.not_funny;
               return (
-                <Table.Row id={chain.id}>
+                <Table.Row key={chain.id} id={chain.id}>
                   {[
                     <Table.Cell key="chain">
                       <div className="flex flex-col gap-0.5">
                         <span className="font-medium">{chain.name}</span>
                         <span className="text-xs text-muted">{t.steps(format.number(chain.steps.length))}</span>
+                        {!chain.runnable && (
+                          <span className="text-xs text-muted">
+                            {t.notReady} · <Link href={`${studioUrl}/chains/${chain.id}`} className="text-xs">{t.finishInStudio}</Link>
+                          </span>
+                        )}
                       </div>
                     </Table.Cell>,
                     <Table.Cell key="weight">
                       <NumberField aria-label={t.weightFor(chain.name)} className="w-32" value={weight} minValue={mixWeight.min} maxValue={mixWeight.max}
-                        step={1} formatOptions={{ maximumFractionDigits: 0 }} isDisabled={pending} isWheelDisabled
+                        step={1} formatOptions={{ maximumFractionDigits: 0 }} isDisabled={pending || !chain.runnable} isWheelDisabled
                         onChange={(value) => onChange(chain.id, value)}>
                         <NumberField.Group>
                           <NumberField.DecrementButton />
@@ -324,7 +342,7 @@ function MixTable({ purpose, chains, weights, total, pending, onChange, t }: {
                   ]}
                 </Table.Row>
               );
-            }}
+            })}
           </Table.Body>
         </Table.Content>
       </Table.ScrollContainer>
