@@ -3,7 +3,7 @@
 import { Eye } from "@gravity-ui/icons";
 import { Button, Chip, Disclosure, Modal, SearchField, Spinner, Table, type SortDescriptor } from "@heroui/react";
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
-import type { LlmResponseDetail, LlmResponseSummary, ResponseStatus, StepKind } from "@/lib/admin-types";
+import type { LlmResponseDetail, LlmResponseSummary, ResponseKind, ResponseStatus } from "@/lib/admin-types";
 import { htmlLang, useLocale, type Messages } from "../locale";
 import { FilterSelect, NoResults, PageHeading, plural, StatTile, TablePager, TimeText, useFormat, useHydrated, usePaged } from "./admin-ui";
 import { Failure, requestStatus, sendJson } from "./resource-manager";
@@ -15,7 +15,7 @@ type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 const callEn = {
   step: "Step",
   kind: "Kind",
-  kinds: { analysis: "Punchline reading", adaptation: "Adaptation" } as Record<StepKind, string>,
+  kinds: { analysis: "Punchline reading", adaptation: "Adaptation", prompt: "Studio prompt" } as Record<ResponseKind, string>,
   model: "Model",
   effort: "Effort",
   efforts: { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" } as Record<Effort, string>,
@@ -50,7 +50,7 @@ const callMessages: Messages<typeof callEn> = {
   es: {
     step: "Paso",
     kind: "Tipo",
-    kinds: { analysis: "Lectura del remate", adaptation: "Adaptación" },
+    kinds: { analysis: "Lectura del remate", adaptation: "Adaptación", prompt: "Prompt de Studio" },
     model: "Modelo",
     effort: "Esfuerzo",
     efforts: { low: "Bajo", medium: "Medio", high: "Alto", xhigh: "Muy alto", max: "Máximo" },
@@ -82,7 +82,7 @@ const callMessages: Messages<typeof callEn> = {
   zh: {
     step: "步骤",
     kind: "类型",
-    kinds: { analysis: "笑点解读", adaptation: "改编" },
+    kinds: { analysis: "笑点解读", adaptation: "改编", prompt: "Studio 提示词" },
     model: "模型",
     effort: "推理强度",
     efforts: { low: "低", medium: "中", high: "高", xhigh: "很高", max: "最高" },
@@ -239,7 +239,7 @@ export function CallDetails({ call }: { call: CallDetail }) {
 }
 
 type StatusFilter = "all" | ResponseStatus;
-type KindFilter = "all" | StepKind;
+type KindFilter = "all" | ResponseKind;
 type SortKey = "id" | "tokens" | "duration" | "created_at";
 
 const en = {
@@ -439,7 +439,7 @@ export function LlmResponses({ responses }: { responses: LlmResponseSummary[] })
           <FilterSelect label={t.status} value={status} onChange={(value) => setStatus(value as StatusFilter)}
             options={[{ id: "all", label: t.allStatuses }, ...(Object.keys(call.statuses) as ResponseStatus[]).map((id) => ({ id, label: call.statuses[id] }))]} />
           <FilterSelect label={t.kind} value={kind} onChange={(value) => setKind(value as KindFilter)}
-            options={[{ id: "all", label: t.allKinds }, ...(Object.keys(call.kinds) as StepKind[]).map((id) => ({ id, label: call.kinds[id] }))]} />
+            options={[{ id: "all", label: t.allKinds }, ...(Object.keys(call.kinds) as ResponseKind[]).map((id) => ({ id, label: call.kinds[id] }))]} />
           <Chip size="sm" variant="soft">{t.count(format.number(rows.length))}</Chip>
         </div>
       </div>

@@ -3,13 +3,13 @@
 import { Eye } from "@gravity-ui/icons";
 import { Button, Chip, Modal, SearchField, Table, Typography, type SortDescriptor } from "@heroui/react";
 import { useMemo, useState } from "react";
-import type { ChainPurpose, GenerationRequest, GenerationSource, RequestStatus } from "@/lib/admin-types";
+import type { GenerationRequest, GenerationSource, RequestPurpose, RequestStatus } from "@/lib/admin-types";
 import { audienceNames, useLocale, type Messages } from "../locale";
 import { FilterSelect, NoResults, PageHeading, plural, shortId, StatTile, TablePager, TimeText, useAdminMessages, useFormat, useHydrated, usePaged } from "./admin-ui";
 import { CallDetails, DetailStatus, Field, useDetail, useSeconds, type CallDetail } from "./llm-responses";
 
 type StatusFilter = "all" | RequestStatus;
-type PurposeFilter = "all" | ChainPurpose;
+type PurposeFilter = "all" | RequestPurpose;
 type SourceFilter = "all" | GenerationSource;
 type SortKey = "id" | "tokens" | "duration" | "created_at";
 
@@ -36,10 +36,10 @@ const en = {
   statuses: { pending: "Pending", succeeded: "Succeeded", unsuitable: "Unsuitable", rejected: "Explanation rejected", failed: "Failed" } as Record<RequestStatus, string>,
   purpose: "Purpose",
   allPurposes: "All purposes",
-  purposes: { preview: "Preview", adaptation: "Adaptation" } as Record<ChainPurpose, string>,
+  purposes: { preview: "Preview", adaptation: "Adaptation", media: "Media" } as Record<RequestPurpose, string>,
   source: "Source",
   allSources: "All sources",
-  sources: { share: "Share", explanation: "Explanation", admin: "Admin" } as Record<GenerationSource, string>,
+  sources: { share: "Share", explanation: "Explanation", admin: "Admin", studio: "Studio" } as Record<GenerationSource, string>,
   table: "Generation requests",
   id: "ID",
   request: "Request",
@@ -87,10 +87,10 @@ const messages: Messages<typeof en> = {
     statuses: { pending: "Pendiente", succeeded: "Completada", unsuitable: "No apta", rejected: "Explicación rechazada", failed: "Fallida" },
     purpose: "Propósito",
     allPurposes: "Todos los propósitos",
-    purposes: { preview: "Vista previa", adaptation: "Adaptación" },
+    purposes: { preview: "Vista previa", adaptation: "Adaptación", media: "Contenido" },
     source: "Origen",
     allSources: "Todos los orígenes",
-    sources: { share: "Compartir", explanation: "Explicación", admin: "Administración" },
+    sources: { share: "Compartir", explanation: "Explicación", admin: "Administración", studio: "Studio" },
     table: "Solicitudes de generación",
     id: "ID",
     request: "Solicitud",
@@ -135,10 +135,10 @@ const messages: Messages<typeof en> = {
     statuses: { pending: "进行中", succeeded: "成功", unsuitable: "不适合", rejected: "解释被拒绝", failed: "失败" },
     purpose: "用途",
     allPurposes: "全部用途",
-    purposes: { preview: "预览", adaptation: "改编" },
+    purposes: { preview: "预览", adaptation: "改编", media: "内容" },
     source: "来源",
     allSources: "全部来源",
-    sources: { share: "分享", explanation: "解释", admin: "后台" },
+    sources: { share: "分享", explanation: "解释", admin: "后台", studio: "Studio" },
     table: "生成请求",
     id: "ID",
     request: "请求",
@@ -254,7 +254,7 @@ export function GenerationRequests({ requests }: { requests: GenerationRequest[]
           <FilterSelect label={t.status} value={status} onChange={(value) => setStatus(value as StatusFilter)}
             options={[{ id: "all", label: t.allStatuses }, ...(Object.keys(t.statuses) as RequestStatus[]).map((id) => ({ id, label: t.statuses[id] }))]} />
           <FilterSelect label={t.purpose} value={purpose} onChange={(value) => setPurpose(value as PurposeFilter)}
-            options={[{ id: "all", label: t.allPurposes }, ...(Object.keys(t.purposes) as ChainPurpose[]).map((id) => ({ id, label: t.purposes[id] }))]} />
+            options={[{ id: "all", label: t.allPurposes }, ...(Object.keys(t.purposes) as RequestPurpose[]).map((id) => ({ id, label: t.purposes[id] }))]} />
           <FilterSelect label={t.source} value={source} onChange={(value) => setSource(value as SourceFilter)}
             options={[{ id: "all", label: t.allSources }, ...(Object.keys(t.sources) as GenerationSource[]).map((id) => ({ id, label: t.sources[id] }))]} />
           <Chip size="sm" variant="soft">{t.count(format.number(rows.length))}</Chip>

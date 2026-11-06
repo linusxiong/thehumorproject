@@ -112,6 +112,9 @@ export type MediaUpdate = Pick<MediaItem, "body" | "gloss" | "punchline_core" | 
 
 export type ChainPurpose = "preview" | "adaptation";
 export type StepKind = "analysis" | "adaptation";
+// The request logs also hold runs of Punchline Studio's media chains, which the chain pages and the mix never list.
+export type RequestPurpose = ChainPurpose | "media";
+export type ResponseKind = StepKind | "prompt";
 
 // A prompt chain with its steps (read-only), its mix weight, and what it produced.
 export type PromptChain = {
@@ -149,12 +152,12 @@ export type StepPrompts = Record<StepKind, string>;
 
 export const mixWeight = { min: 0, max: 100 } as const;
 
-export type GenerationSource = "share" | "explanation" | "admin";
+export type GenerationSource = "share" | "explanation" | "admin" | "studio";
 export type RequestStatus = "pending" | "succeeded" | "unsuitable" | "rejected" | "failed";
 
 export type GenerationRequest = {
   id: number;
-  purpose: ChainPurpose;
+  purpose: RequestPurpose;
   source: GenerationSource;
   chain_id: number | null;
   chain_name: string | null;
@@ -180,13 +183,13 @@ export type ResponseStatus = "succeeded" | "refused" | "failed";
 export type LlmResponseSummary = {
   id: number;
   request_id: number;
-  purpose: ChainPurpose;
+  purpose: RequestPurpose;
   source: GenerationSource;
   input: string;
   chain_name: string | null;
   step_name: string | null;
   step_position: number | null;
-  kind: StepKind;
+  kind: ResponseKind;
   model: string;
   model_name: string | null;
   effort: string;
