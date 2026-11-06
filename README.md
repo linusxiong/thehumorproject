@@ -212,6 +212,12 @@ The **chain mix** gives each chain a weight from 0 to 100. Each request picks on
 
 The simple tables share one API: `GET`/`POST /api/admin/[resource]` and `PATCH`/`DELETE /api/admin/[resource]/[id]` for `terms`, `generation-examples`, `llm-models`, `llm-providers`, `signup-domains`, and `whitelisted-emails`. `lib/admin-resources.ts` defines each table and validates every field for both the forms and the Route Handlers; duplicates and rows still in use answer 409. `GET`/`PATCH /api/admin/prompt-chain-mix` (body `{ weights: [{ chainId, weight }] }`) reads and replaces the mix.
 
+### Media chains
+
+[Punchline Studio](https://punchlinestudio.vercel.app) is a separate superadmin tool on this database for building prompt chains and generating media from them. Its chains share `prompt_chains` and `prompt_chain_steps` under the purpose `media`, and their steps have the kind `prompt`: unlike preview and adaptation chains, whose prompts live in `lib/claude.ts`, each step keeps its prompt in the table. The site never runs them, and the Prompt chains and Chain mix pages do not list them.
+
+The server key still has read-only access to both tables. Studio changes chains only through the `studio_*` functions, which run as their owner and refuse any chain that is not a media chain, so the chains the site runs keep changing only through migrations. Runs are logged in `generation_requests` (purpose `media`, source `studio`) and `llm_responses` (kind `prompt`), and appear on those pages. Finished runs are stored in `chain_media` as a snapshot of every step's output, with any image in the private `chain-media` bucket.
+
 ### AI requests and responses
 
 `generation_requests` records every AI request with its purpose, source (share, explanation, or admin), chain, account digest, input (including previewed drafts that were never shared, as the terms disclose), explanation, status (`succeeded`, `unsuitable`, `rejected`, or `failed`, with the reason), timing, and the joke it produced or changed. `llm_responses` records every model call within a request: the step, model and effort, what was sent after the system prompt, status (`succeeded`, `refused`, or `failed`), HTTP status, stop reason, token usage including cache reads and writes, duration, and the model's JSON answer. Logging uses short timeouts and never fails a member's request.
